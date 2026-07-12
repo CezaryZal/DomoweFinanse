@@ -13,4 +13,4 @@ export type Expense = {
   categoryId: string
 }
 
-export type View = 'dashboard' | 'expenses' | 'receipts' | 'categories' | 'login'
+export type View = 'dashboard' | 'expenses' | 'receipts' | 'categories'

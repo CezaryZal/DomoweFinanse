@@ -1,145 +1,143 @@
 # Domowe Finanse
 
-> Wspólna aplikacja do monitorowania wydatków gospodarstwa domowego, z osobnymi kontami użytkowników i wsparciem AI przy odczytywaniu paragonów.
+Prywatna aplikacja webowa do monitorowania wydatków gospodarstwa domowego. Docelowo umożliwi ręczne dodawanie wydatków, analizę zdjęć paragonów, kategoryzację wspomaganą przez AI oraz wspólny dostęp członków gospodarstwa.
 
-## Cel projektu
+## Aktualny stan projektu
 
-„Domowe Finanse” ma ułatwiać członkom jednego gospodarstwa domowego rejestrowanie, porządkowanie i analizowanie wspólnych wydatków. Aplikacja ma łączyć wydatki wpisane ręcznie z danymi pozyskanymi ze zdjęć paragonów, a w późniejszych etapach także z wyciągów bankowych i notatek dotyczących inwestycji.
+Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 
-Najważniejszym rezultatem jest wiarygodny, wspólny obraz domowych finansów, w którym użytkownicy mogą sprawdzić, na co wydawane są pieniądze i poprawić każdą błędną klasyfikację.
+- ekran logowania przez adres e-mail i hasło;
+- rejestracja konta przez adres e-mail i hasło;
+- potwierdzenie hasła podczas rejestracji;
+- obsługa komunikatów błędów i stanów formularza;
+- obsługa sesji Supabase po odświeżeniu aplikacji;
+- wylogowanie użytkownika;
+- dashboard z przykładowymi wydatkami i kategoriami;
+- podstawowy responsywny interfejs zgodny z projektem graficznym.
 
-## Użytkownicy i model dostępu
+Wydatki i kategorie są obecnie przykładowymi danymi frontendowymi. Nie ma jeszcze tabel aplikacyjnych, migracji ani zapisu wydatków w bazie danych.
 
-- Aplikacja jest przeznaczona wyłącznie do prywatnego użytku domowego.
-- Każdy użytkownik ma własne konto, login i hasło.
-- Dane należą do wspólnego **gospodarstwa domowego**, a nie do pojedynczego użytkownika.
-- Właściciel gospodarstwa tworzy je i zaprasza kolejnych członków.
-- Członkowie widzą oraz mogą edytować wspólne wydatki i kategorie w obrębie swojego gospodarstwa.
-- Użytkownik nie może odczytać ani zmienić danych innego gospodarstwa domowego.
+## Uruchomienie lokalne
+
+### Wymagania
+
+- Node.js 20 lub nowszy;
+- pnpm;
+- dostęp do projektu Supabase.
+
+### Instalacja
+
+```bash
+pnpm install
+```
+
+### Konfiguracja Supabase
+
+Utwórz lokalny plik `.env.local` na podstawie `.env.example`:
+
+```env
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+```
+
+Do aplikacji frontendowej wolno używać wyłącznie klucza publishable. Klucza `service_role` ani innych sekretów nie należy umieszczać w kodzie przeglądarkowym.
+
+W konfiguracji Supabase Auth należy dodać lokalne adresy:
+
+- Site URL: `http://localhost:5151`;
+- Redirect URL: `http://localhost:5151`.
+
+### Start aplikacji
+
+```bash
+pnpm dev
+```
+
+Aplikacja będzie dostępna pod adresem [http://localhost:5151](http://localhost:5151).
+
+Nie należy otwierać pliku `index.html` bezpośrednio z systemu plików. Aplikacja korzysta z serwera Vite.
+
+### Build produkcyjny
+
+```bash
+pnpm run build
+pnpm run preview
+```
+
+## Stack technologiczny
+
+### Frontend
+
+- React;
+- TypeScript;
+- Vite;
+- CSS;
+- `lucide-react` — ikony;
+- `@supabase/supabase-js` — komunikacja z Supabase Auth.
+
+### Backend i dane
+
+Docelowa architektura wykorzystuje:
+
+- Supabase Auth — konta i sesje użytkowników;
+- Supabase Postgres — wydatki, kategorie i gospodarstwa domowe;
+- Row Level Security — ograniczenie dostępu do danych właściwego gospodarstwa;
+- Supabase Edge Functions — operacje wymagające sekretów, AI lub dodatkowej walidacji.
+
+Na obecnym etapie używany jest tylko Supabase Auth. Nie utworzono jeszcze schematu danych aplikacji.
+
+### Hosting docelowy
+
+Frontend jest planowany do wdrożenia na Cloudflare Pages lub Workers Static Assets. Cloudflare Worker nie jest obecnie potrzebny i nie został dodany do projektu.
 
 ## Główny przepływ użytkownika
 
-1. Właściciel zakłada gospodarstwo domowe i zaprasza członków.
-2. Użytkownik dodaje wydatek ręcznie albo przesyła zdjęcie paragonu.
-3. Dla paragonu system rozpoznaje pozycje, kwoty i proponuje kategorie.
-4. Wyniki o wysokiej pewności mogą zostać przyjęte automatycznie, a niepewne są oznaczone do weryfikacji.
-5. Użytkownik poprawia dane lub kategorię, gdy jest to potrzebne.
-6. Wszyscy członkowie gospodarstwa korzystają ze wspólnego zestawienia wydatków.
+1. Użytkownik zakłada konto przy użyciu adresu e-mail i hasła.
+2. Użytkownik potwierdza adres e-mail, jeśli wymaga tego konfiguracja projektu Supabase.
+3. Użytkownik loguje się do aplikacji.
+4. Aplikacja odtwarza aktywną sesję po odświeżeniu strony.
+5. Użytkownik może wylogować się z poziomu interfejsu.
 
-## Zakres MVP
+Docelowo po zalogowaniu użytkownik będzie mógł dodawać wydatki, tworzyć kategorie i zarządzać wspólnymi danymi gospodarstwa domowego.
 
-Pierwsza użyteczna wersja obejmuje:
-
-- rejestrację, logowanie i zarządzanie członkami gospodarstwa;
-- role: właściciel gospodarstwa i członek gospodarstwa;
-- ręczne dodawanie oraz edycję wydatków;
-- przesyłanie zdjęć paragonów;
-- odczyt paragonu przez AI/OCR: sprzedawca, data, pozycje, ilości i kwoty, jeśli są dostępne;
-- propozycję kategorii dla pozycji lub całego wydatku;
-- kolejkę pozycji wymagających weryfikacji;
-- predefiniowane kategorie oraz tworzenie własnych;
-- ręczne lub wspomagane przez AI przekategoryzowanie wydatków historycznych;
-- przegląd listy wydatków i podstawowych podsumowań według kategorii;
-- responsywną aplikację webową PWA, wygodną na komputerze, Androidzie oraz urządzeniach Apple.
-
-### Poza zakresem MVP
-
-Funkcje poniżej są planowane, ale nie powinny opóźniać pierwszej wersji:
-
-- import i analiza wyciągów bankowych;
-- wykrywanie oraz łączenie duplikatów między wyciągiem a paragonem;
-- notatki i ewidencja inwestycji giełdowych;
-- zaawansowane budżety, cele oszczędnościowe i prognozy;
-- osobne aplikacje natywne na Androida i iOS.
-
-## Kategorie wydatków
-
-Aplikacja startuje z prostym zestawem kategorii, na przykład: żywność, dom i rachunki, transport, zdrowie, rozrywka, edukacja, zakupy, dzieci i inne.
-
-Każde gospodarstwo może tworzyć dodatkowe kategorie. Użytkownik może ręcznie zmienić kategorię pojedynczej pozycji lub wydatku, również dla wpisów archiwalnych. W przyszłości AI może proponować zmianę kategorii na podstawie korekt wykonywanych wcześniej przez użytkowników, ale decyzja użytkownika ma pierwszeństwo.
-
-## Zasady wykorzystania AI
-
-AI jest pomocą w wprowadzaniu danych, nie nieomylnym źródłem prawdy.
-
-- Model analizuje zdjęcie paragonu i zwraca ustrukturyzowaną propozycję danych oraz kategorii.
-- System zapisuje poziom pewności rozpoznania i kategoryzacji.
-- Wyniki o niskiej pewności wymagają przeglądu przed uznaniem ich za poprawne.
-- Użytkownik zawsze może edytować rozpoznane dane, zaakceptować je lub odrzucić.
-- Integracja AI działa po stronie zaufanej usługi serwerowej; klucze dostępu do dostawcy AI nie trafiają do aplikacji w przeglądarce.
-- Wybór konkretnego dostawcy OCR/AI zostanie dokonany przed implementacją analizy paragonów, po ocenie jakości dla polskich paragonów, prywatności i kosztu.
-
-## Proponowana architektura
-
-| Obszar | Założenie |
-| --- | --- |
-| Frontend | React, TypeScript i Vite |
-| Dostęp na urządzeniach | Responsywna aplikacja webowa PWA |
-| Dane i logowanie | Supabase Postgres oraz Supabase Auth |
-| Autoryzacja | Row Level Security (RLS) ograniczające dane do gospodarstwa użytkownika |
-| Logika zaufana | Supabase Edge Functions, gdy operacja wymaga sekretu, integracji AI lub dodatkowej walidacji |
-| Hosting publiczny | Cloudflare Pages lub Workers Static Assets |
-| Testy | Vitest, React Testing Library oraz wybrane scenariusze end-to-end |
-
-Cloudflare Worker nie jest planowany na start. Zostanie rozważony tylko wtedy, gdy potrzebna będzie dodatkowa warstwa ochrony, limitowania ruchu lub integracji z zewnętrzną usługą, której nie obsłuży prościej Supabase Edge Function.
-
-## Dane, prywatność i bezpieczeństwo
-
-Projekt przetwarza prywatne dane finansowe, dlatego bezpieczeństwo jest wymaganiem podstawowym.
-
-- Każda tabela udostępniona przez API będzie miała włączone RLS oraz polityki ograniczające dostęp do członków właściwego gospodarstwa.
-- Uprawnienie `authenticated` samo w sobie nie wystarcza: polityki muszą weryfikować przynależność do gospodarstwa.
-- Klucze tajne, w tym klucze serwisowe Supabase i klucze dostawcy AI, pozostają wyłącznie po stronie serwera.
-- Zdjęcia paragonów będą dostępne tylko członkom gospodarstwa, do którego należą.
-- Dane z paragonu i dane finansowe nie będą wykorzystywane jako dane treningowe bez wyraźnej decyzji użytkowników i oceny regulaminu dostawcy AI.
-- Formularze i interfejs nie zastępują kontroli dostępu po stronie bazy danych; przeglądarka jest środowiskiem niezaufanym.
-
-Szczegółowy model danych, polityki RLS, retencja zdjęć oraz proces usuwania konta zostaną opisane i zatwierdzone przed pracami nad bazą danych.
-
-## Plan budowy
-
-### Etap 0 — doprecyzowanie produktu
-
-- Ustalenie modelu danych, reguł kategorii i widoków podsumowań.
-- Zdefiniowanie polityk właściciela i członka gospodarstwa.
-- Ocena dostawców OCR/AI na reprezentatywnych polskich paragonach.
+## Plan rozwoju
 
 ### Etap 1 — wspólne gospodarstwo i ręczne wydatki
 
-- Logowanie, tworzenie gospodarstwa i zapraszanie członków.
-- Bezpieczny model danych z RLS.
-- Dodawanie, edycja, kategoryzacja i przegląd ręcznych wydatków.
+- model gospodarstwa domowego i członków;
+- tabele Supabase Postgres z RLS;
+- zapisywanie, edycja i usuwanie wydatków;
+- tworzenie oraz edycja kategorii;
+- podsumowania oparte na rzeczywistych danych.
 
-### Etap 2 — paragony i weryfikacja AI
+### Etap 2 — paragony i AI/OCR
 
-- Prywatne przechowywanie zdjęć paragonów.
-- Serwerowa analiza zdjęć, obsługa błędów i statusów przetwarzania.
-- Widok weryfikacji oraz korekta danych i kategorii.
+- prywatne przechowywanie zdjęć paragonów;
+- analiza sprzedawcy, daty, pozycji i kwot;
+- propozycje kategorii;
+- kolejka elementów wymagających weryfikacji;
+- ręczna korekta danych przez użytkownika.
 
-### Etap 3 — agregacja z kolejnych źródeł
+### Etap 3 — kolejne źródła danych
 
-- Import wyciągów bankowych w uzgodnionych formatach.
-- Zapobieganie podwójnemu liczeniu transakcji i paragonów.
-- Notatki oraz ewidencja inwestycji jako osobny, wyraźnie oznaczony moduł.
+- import wyciągów bankowych;
+- wykrywanie duplikatów;
+- notatki i ewidencja inwestycji;
+- budżety, cele oszczędnościowe i prognozy.
 
-## Kryteria akceptacji dla MVP
+## Bezpieczeństwo
 
-1. Właściciel może utworzyć gospodarstwo i zaprosić członka z osobnym kontem.
-2. Członek gospodarstwa widzi wspólne wydatki, ale nie ma dostępu do danych innych gospodarstw.
-3. Użytkownik może dodać, poprawić i skategoryzować wydatek ręcznie.
-4. Użytkownik może przesłać paragon, zobaczyć propozycję danych i poprawić ją przed użyciem.
-5. Niepewne wyniki AI są wyraźnie oznaczone do weryfikacji.
-6. Użytkownik może dodać własną kategorię i przypisać ją do istniejącego wydatku.
-7. Interfejs pozostaje użyteczny na ekranie telefonu i komputera.
+- Sekrety i klucze `service_role` nie mogą trafić do aplikacji frontendowej.
+- Dane użytkowników będą chronione przez RLS, a nie wyłącznie przez ukrywanie elementów interfejsu.
+- Każda operacja zapisu danych będzie walidowana po stronie backendu lub przez reguły bazy danych.
+- Zdjęcia paragonów powinny być przechowywane prywatnie i dostępne tylko dla członków właściwego gospodarstwa.
 
-## Ryzyka i pytania do rozwiązania
+## Weryfikacja ręczna
 
-- **Jakość OCR i klasyfikacji:** paragony różnią się układem, jakością zdjęcia i nazwami produktów; konieczna jest weryfikacja przez użytkownika.
-- **Duplikaty:** ten sam zakup może pojawić się jako paragon i transakcja bankowa; reguły ich łączenia wymagają osobnego projektu przed importem wyciągów.
-- **Formaty bankowe:** banki oferują różne formaty eksportu i różny zakres danych.
-- **Koszt i prywatność AI:** wybór dostawcy wpłynie na jakość rozpoznawania, koszt działania i sposób przetwarzania zdjęć.
-- **Dane wrażliwe:** trzeba zdefiniować retencję paragonów, eksport danych, usuwanie konta oraz zasady odzyskiwania dostępu.
-
-## Stan projektu
-
-Na obecnym etapie projekt zawiera wyłącznie założenia. Nie ma jeszcze kodu, schematu bazy danych, konfiguracji Supabase, konfiguracji Cloudflare ani integracji z usługą AI.
+1. Otwórz aplikację pod `http://localhost:5151`.
+2. Przełącz formularz na „Rejestracja” i utwórz konto.
+3. Potwierdź e-mail, jeśli Supabase wysłał wiadomość.
+4. Zaloguj się przy użyciu adresu e-mail i hasła.
+5. Odśwież stronę i sprawdź, czy sesja nadal działa.
+6. Wyloguj się.
+7. Sprawdź, czy niezgodne hasła podczas rejestracji są odrzucane.

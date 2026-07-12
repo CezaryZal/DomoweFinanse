@@ -1,10 +1,13 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import {
   ArrowLeft, ArrowRight, BarChart3, Bell, Bike, CalendarDays, Camera, CarFront, Check,
   ChevronDown, CircleHelp, CreditCard, FileText, Home, LayoutDashboard, Menu, Plus,
-  ReceiptText, Search, Settings, ShoppingBasket, Sparkles, Tag, Trash2, Utensils, X,
+  ReceiptText, Search, LogOut, ShoppingBasket, Sparkles, Tag, Trash2, Utensils, X,
 } from 'lucide-react'
 import { initialCategories, initialExpenses } from './data'
+import { AuthScreen } from './auth/AuthScreen'
+import { supabase } from './lib/supabase'
 import type { Category, Expense, View } from './types'
 
 const money = new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' })
@@ -14,10 +17,29 @@ const iconMap = { basket: ShoppingBasket, home: Home, car: CarFront, heart: Circ
 
 function App() {
   const [view, setView] = useState<View>('dashboard')
+  const [session, setSession] = useState<Session | null>(null)
+  const [isAuthReady, setAuthReady] = useState(false)
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses)
   const [categories, setCategories] = useState<Category[]>(initialCategories)
   const [isExpenseOpen, setExpenseOpen] = useState(false)
   const [isCategoryOpen, setCategoryOpen] = useState(false)
+
+  useEffect(() => {
+    async function loadSession() {
+      const { data } = await supabase.auth.getSession()
+      setSession(data.session)
+      setAuthReady(true)
+    }
+
+    void loadSession()
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      setAuthReady(true)
+    })
+
+    return () => listener.subscription.unsubscribe()
+  }, [])
 
   const total = useMemo(() => expenses.reduce((sum, item) => sum + item.amount, 0), [expenses])
   const categoryTotals = useMemo(() => categories.map((category) => ({
@@ -36,16 +58,27 @@ function App() {
     setCategoryOpen(false)
   }
 
+  async function signOut() {
+    await supabase.auth.signOut()
+  }
+
+  if (!isAuthReady) {
+    return <main className="auth-page"><div className="auth-loading">Sprawdzanie sesji…</div></main>
+  }
+
+  if (!session) {
+    return <AuthScreen />
+  }
+
   return (
     <div className="app-shell">
-      <Sidebar activeView={view} onNavigate={setView} />
+      <Sidebar activeView={view} onNavigate={setView} onSignOut={() => void signOut()} />
       <main className="main-content">
-        <Topbar onAddExpense={() => setExpenseOpen(true)} onOpenReceipt={() => setView('receipts')} onMenu={() => setView('dashboard')} />
+        <Topbar onAddExpense={() => setExpenseOpen(true)} onOpenReceipt={() => setView('receipts')} onMenu={() => setView('dashboard')} userEmail={session.user.email ?? ''} onSignOut={() => void signOut()} />
         {view === 'dashboard' && <Dashboard expenses={expenses} categories={categories} total={total} categoryTotals={categoryTotals} onNavigate={setView} />}
         {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} onAdd={() => setExpenseOpen(true)} onDelete={(id) => setExpenses((current) => current.filter((item) => item.id !== id))} />}
         {view === 'categories' && <CategoriesPage categories={categories} categoryTotals={categoryTotals} onAdd={() => setCategoryOpen(true)} />}
         {view === 'receipts' && <ReceiptsPage onAdd={() => setView('receipts')} />}
-        {view === 'login' && <LoginPage />}
       </main>
       {isExpenseOpen && <ExpenseModal categories={categories} onClose={() => setExpenseOpen(false)} onSubmit={addExpense} />}
       {isCategoryOpen && <CategoryModal onClose={() => setCategoryOpen(false)} onSubmit={addCategory} />}
@@ -54,7 +87,7 @@ function App() {
   )
 }
 
-function Sidebar({ activeView, onNavigate }: { activeView: View; onNavigate: (view: View) => void }) {
+function Sidebar({ activeView, onNavigate, onSignOut }: { activeView: View; onNavigate: (view: View) => void; onSignOut: () => void }) {
   const items: { view: View; label: string; icon: typeof LayoutDashboard }[] = [
     { view: 'dashboard', label: 'Pulpit', icon: LayoutDashboard }, { view: 'expenses', label: 'Wydatki', icon: FileText },
     { view: 'receipts', label: 'Paragony', icon: ReceiptText }, { view: 'categories', label: 'Kategorie', icon: Tag },
@@ -62,12 +95,12 @@ function Sidebar({ activeView, onNavigate }: { activeView: View; onNavigate: (vi
   return <aside className="sidebar">
     <div className="brand"><span className="brand-mark"><BarChart3 size={18} /></span><span>Domowe<br /><strong>Finanse</strong></span></div>
     <nav>{items.map(({ view, label, icon: Icon }) => <button key={view} className={activeView === view ? 'nav-item active' : 'nav-item'} onClick={() => onNavigate(view)}><Icon size={17} />{label}</button>)}</nav>
-    <div className="sidebar-bottom"><button className="nav-item" onClick={() => onNavigate('login')}><Settings size={17} />Ustawienia</button><div className="household"><span className="avatar">K</span><div><small>Gospodarstwo</small><strong>Rodzina Kowalskich</strong><span>3 domowników</span></div></div></div>
+    <div className="sidebar-bottom"><button className="nav-item" onClick={onSignOut}><LogOut size={17} />Wyloguj</button><div className="household"><span className="avatar">K</span><div><small>Gospodarstwo</small><strong>Rodzina Kowalskich</strong><span>3 domowników</span></div></div></div>
   </aside>
 }
 
-function Topbar({ onAddExpense, onOpenReceipt, onMenu }: { onAddExpense: () => void; onOpenReceipt: () => void; onMenu: () => void }) {
-  return <header className="topbar"><button className="mobile-menu" onClick={onMenu}><Menu size={21} /></button><div className="greeting"><span>Sobota, 11 lipca 2026</span><h1>Dzień dobry, Cezary</h1></div><div className="top-actions"><button className="button secondary" onClick={onAddExpense}><Plus size={17} />Dodaj wydatek</button><button className="button primary" onClick={onOpenReceipt}><Camera size={16} />Skanuj paragon</button><button className="icon-button" aria-label="Powiadomienia"><Bell size={19} /></button></div></header>
+function Topbar({ onAddExpense, onOpenReceipt, onMenu, userEmail, onSignOut }: { onAddExpense: () => void; onOpenReceipt: () => void; onMenu: () => void; userEmail: string; onSignOut: () => void }) {
+  return <header className="topbar"><button className="mobile-menu" onClick={onMenu}><Menu size={21} /></button><div className="greeting"><span>Sobota, 11 lipca 2026</span><h1>Dzień dobry, Cezary</h1></div><div className="top-actions"><span className="user-email">{userEmail}</span><button className="button secondary" onClick={onAddExpense}><Plus size={17} />Dodaj wydatek</button><button className="button primary" onClick={onOpenReceipt}><Camera size={16} />Skanuj paragon</button><button className="icon-button" onClick={onSignOut} aria-label="Wyloguj"><LogOut size={19} /></button></div></header>
 }
 
 function Dashboard({ expenses, categories, total, categoryTotals, onNavigate }: { expenses: Expense[]; categories: Category[]; total: number; categoryTotals: (Category & { total: number })[]; onNavigate: (view: View) => void }) {
@@ -88,8 +121,6 @@ function ExpensesPage({ expenses, categories, onAdd, onDelete }: { expenses: Exp
 function CategoriesPage({ categories, categoryTotals, onAdd }: { categories: Category[]; categoryTotals: (Category & { total: number })[]; onAdd: () => void }) { return <div className="page"><PageTitle title="Kategorie" subtitle="Porządkuj wydatki według własnych zasad" action={<button className="button primary" onClick={onAdd}><Plus size={17} />Nowa kategoria</button>} /><div className="category-grid">{categories.map((category) => { const item = categoryTotals.find((entry) => entry.id === category.id); const Icon = iconMap[category.icon as keyof typeof iconMap] ?? Tag; return <article className="category-card" key={category.id}><span className="category-large-icon" style={{ background: `${category.color}18`, color: category.color }}><Icon size={22} /></span><div><strong>{category.name}</strong><span>{item?.total ? money.format(item.total) : 'Brak wydatków'}</span></div><small>{item ? `${Math.round(item.total / (categoryTotals.reduce((sum, entry) => sum + entry.total, 0) || 1) * 100)}% wszystkich wydatków` : 'Nowa kategoria'}</small></article> })}</div></div> }
 
 function ReceiptsPage({ onAdd }: { onAdd: () => void }) { return <div className="page"><PageTitle title="Paragony" subtitle="Weryfikuj dane rozpoznane ze zdjęć" /><div className="receipt-empty"><span className="empty-icon"><Camera size={30} /></span><h3>Moduł skanowania paragonów</h3><p>W kolejnym etapie dodamy przesyłanie zdjęć, kolejkę przetwarzania oraz ekran korekty wyników OCR.</p><button className="button primary" onClick={onAdd}><Camera size={17} />Dodaj zdjęcie paragonu</button><small>To jest wersja demonstracyjna — zdjęcie nie zostanie jeszcze wysłane.</small></div></div> }
-
-function LoginPage() { return <div className="login-page"><div className="login-card"><span className="brand-mark large"><BarChart3 size={23} /></span><h2>Witaj ponownie</h2><p>Zaloguj się, aby zobaczyć finanse swojego gospodarstwa.</p><label>Email<input type="email" placeholder="ty@example.com" /></label><label>Hasło<input type="password" placeholder="••••••••" /></label><button className="button primary full" onClick={(event) => event.preventDefault()}>Zaloguj się</button><span className="login-note">Integracja z Supabase Auth zostanie dodana w kolejnym etapie.</span></div></div> }
 
 function PageTitle({ title, subtitle, action }: { title: string; subtitle: string; action?: ReactNode }) { return <div className="page-title"><div><h2>{title}</h2><span>{subtitle}</span></div>{action}</div> }
 
