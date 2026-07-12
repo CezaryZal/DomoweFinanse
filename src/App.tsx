@@ -5,9 +5,10 @@ import {
   ChevronDown, CircleHelp, CreditCard, FileText, Home, LayoutDashboard, Menu, Plus,
   ReceiptText, Search, LogOut, ShoppingBasket, Sparkles, Tag, Trash2, Utensils, X,
 } from 'lucide-react'
-import { initialCategories, initialExpenses } from './data'
+import { defaultCategories } from './data'
 import { AuthScreen } from './auth/AuthScreen'
 import { supabase } from './lib/supabase'
+import { createCategory, createExpense, deleteExpense, listCategories, listExpenses } from './lib/finance'
 import type { Category, Expense, View } from './types'
 
 const money = new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' })
@@ -19,8 +20,10 @@ function App() {
   const [view, setView] = useState<View>('dashboard')
   const [session, setSession] = useState<Session | null>(null)
   const [isAuthReady, setAuthReady] = useState(false)
-  const [expenses, setExpenses] = useState<Expense[]>(initialExpenses)
-  const [categories, setCategories] = useState<Category[]>(initialCategories)
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [isDataLoading, setDataLoading] = useState(false)
+  const [dataError, setDataError] = useState('')
   const [isExpenseOpen, setExpenseOpen] = useState(false)
   const [isCategoryOpen, setCategoryOpen] = useState(false)
 
@@ -41,21 +44,74 @@ function App() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    const userId = session?.user.id ?? ''
+    if (!userId) return
+
+    async function loadData() {
+      setDataLoading(true)
+      setDataError('')
+
+      try {
+        let loadedCategories = await listCategories(userId)
+        if (loadedCategories.length === 0) {
+          const createdCategories = await Promise.all(defaultCategories.map((category) => createCategory(userId, category)))
+          loadedCategories = createdCategories
+        }
+
+        const loadedExpenses = await listExpenses(userId)
+        setCategories(loadedCategories)
+        setExpenses(loadedExpenses)
+      } catch (error) {
+        setDataError(error instanceof Error ? error.message : 'Nie udało się pobrać danych z bazy.')
+      } finally {
+        setDataLoading(false)
+      }
+    }
+
+    void loadData()
+  }, [session?.user.id])
+
   const total = useMemo(() => expenses.reduce((sum, item) => sum + item.amount, 0), [expenses])
   const categoryTotals = useMemo(() => categories.map((category) => ({
     ...category,
     total: expenses.filter((expense) => expense.categoryId === category.id).reduce((sum, expense) => sum + expense.amount, 0),
   })).sort((a, b) => b.total - a.total), [categories, expenses])
 
-  function addExpense(expense: Omit<Expense, 'id'>) {
-    setExpenses((current) => [{ ...expense, id: crypto.randomUUID() }, ...current])
-    setExpenseOpen(false)
-    setView('expenses')
+  async function addExpense(expense: Omit<Expense, 'id'>) {
+    if (!session?.user.id) return
+
+    try {
+      const savedExpense = await createExpense(session.user.id, expense)
+      setExpenses((current) => [savedExpense, ...current])
+      setExpenseOpen(false)
+      setView('expenses')
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : 'Nie udało się zapisać wydatku.')
+    }
   }
 
-  function addCategory(category: Omit<Category, 'id'>) {
-    setCategories((current) => [...current, { ...category, id: crypto.randomUUID() }])
-    setCategoryOpen(false)
+  async function addCategory(category: Omit<Category, 'id'>) {
+    if (!session?.user.id) return
+
+    try {
+      const savedCategory = await createCategory(session.user.id, category)
+      setCategories((current) => [...current, savedCategory].sort((a, b) => a.name.localeCompare(b.name)))
+      setCategoryOpen(false)
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : 'Nie udało się zapisać kategorii.')
+    }
+  }
+
+  async function removeExpense(expenseId: string) {
+    if (!session?.user.id) return
+
+    try {
+      await deleteExpense(session.user.id, expenseId)
+      setExpenses((current) => current.filter((item) => item.id !== expenseId))
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : 'Nie udało się usunąć wydatku.')
+    }
   }
 
   async function signOut() {
@@ -70,18 +126,23 @@ function App() {
     return <AuthScreen />
   }
 
+  if (isDataLoading) {
+    return <main className="auth-page"><div className="auth-loading">Pobieranie danychâ€¦</div></main>
+  }
+
   return (
     <div className="app-shell">
       <Sidebar activeView={view} onNavigate={setView} onSignOut={() => void signOut()} />
       <main className="main-content">
+        {dataError && <div className="data-error" role="alert">{dataError}<button className="icon-button" onClick={() => setDataError('')} aria-label="Zamknij komunikat"><X size={16} /></button></div>}
         <Topbar onAddExpense={() => setExpenseOpen(true)} onOpenReceipt={() => setView('receipts')} onMenu={() => setView('dashboard')} userEmail={session.user.email ?? ''} onSignOut={() => void signOut()} />
         {view === 'dashboard' && <Dashboard expenses={expenses} categories={categories} total={total} categoryTotals={categoryTotals} onNavigate={setView} />}
-        {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} onAdd={() => setExpenseOpen(true)} onDelete={(id) => setExpenses((current) => current.filter((item) => item.id !== id))} />}
+        {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} onAdd={() => setExpenseOpen(true)} onDelete={(id) => void removeExpense(id)} />}
         {view === 'categories' && <CategoriesPage categories={categories} categoryTotals={categoryTotals} onAdd={() => setCategoryOpen(true)} />}
         {view === 'receipts' && <ReceiptsPage onAdd={() => setView('receipts')} />}
       </main>
-      {isExpenseOpen && <ExpenseModal categories={categories} onClose={() => setExpenseOpen(false)} onSubmit={addExpense} />}
-      {isCategoryOpen && <CategoryModal onClose={() => setCategoryOpen(false)} onSubmit={addCategory} />}
+      {isExpenseOpen && <ExpenseModal categories={categories} onClose={() => setExpenseOpen(false)} onSubmit={(expense) => void addExpense(expense)} />}
+      {isCategoryOpen && <CategoryModal onClose={() => setCategoryOpen(false)} onSubmit={(category) => void addCategory(category)} />}
       <button className="mobile-add" onClick={() => setExpenseOpen(true)} aria-label="Dodaj wydatek"><Plus size={22} /></button>
     </div>
   )
@@ -126,7 +187,7 @@ function PageTitle({ title, subtitle, action }: { title: string; subtitle: strin
 
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) { return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal" onMouseDown={(event) => event.stopPropagation()}><div className="modal-header"><h3>{title}</h3><button className="icon-button" onClick={onClose} aria-label="Zamknij"><X size={19} /></button></div>{children}</div></div> }
 
-function ExpenseModal({ categories, onClose, onSubmit }: { categories: Category[]; onClose: () => void; onSubmit: (expense: Omit<Expense, 'id'>) => void }) { const [merchant, setMerchant] = useState(''); const [amount, setAmount] = useState(''); const [categoryId, setCategoryId] = useState(categories[0]?.id ?? ''); const [formError, setFormError] = useState(''); function submit(event: FormEvent) { event.preventDefault(); const parsedAmount = Number(amount.replace(',', '.')); if (!merchant.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) { setFormError('Podaj nazwę sklepu i kwotę większą od zera.'); return } onSubmit({ merchant: merchant.trim(), amount: parsedAmount, categoryId, date: new Date().toISOString().slice(0, 10) }) } return <ModalShell title="Dodaj wydatek" onClose={onClose}><form className="modal-form" onSubmit={submit}><label>Sklep lub opis<input value={merchant} onChange={(event) => setMerchant(event.target.value)} placeholder="np. Biedronka" autoFocus /></label><label>Kwota (PLN)<input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="0,00" /></label><label>Kategoria<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>{formError && <div className="form-error">{formError}</div>}<div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Anuluj</button><button className="button primary" type="submit"><Check size={17} />Zapisz wydatek</button></div></form></ModalShell> }
+function ExpenseModal({ categories, onClose, onSubmit }: { categories: Category[]; onClose: () => void; onSubmit: (expense: Omit<Expense, 'id'>) => void }) { const [merchant, setMerchant] = useState(''); const [amount, setAmount] = useState(''); const [categoryId, setCategoryId] = useState(categories[0]?.id ?? ''); const [formError, setFormError] = useState(''); function submit(event: FormEvent) { event.preventDefault(); const parsedAmount = Number(amount.replace(',', '.')); if (!merchant.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) { setFormError('Podaj nazwę sklepu i kwotę większą od zera.'); return } onSubmit({ merchant: merchant.trim(), amount: parsedAmount, currency: 'PLN', categoryId, date: new Date().toISOString().slice(0, 10), source: 'manual' }) } return <ModalShell title="Dodaj wydatek" onClose={onClose}><form className="modal-form" onSubmit={submit}><label>Sklep lub opis<input value={merchant} onChange={(event) => setMerchant(event.target.value)} placeholder="np. Biedronka" autoFocus /></label><label>Kwota (PLN)<input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="0,00" /></label><label>Kategoria<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Bez kategorii</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>{formError && <div className="form-error">{formError}</div>}<div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Anuluj</button><button className="button primary" type="submit"><Check size={17} />Zapisz wydatek</button></div></form></ModalShell> }
 
 function CategoryModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (category: Omit<Category, 'id'>) => void }) { const [name, setName] = useState(''); const [formError, setFormError] = useState(''); function submit(event: FormEvent) { event.preventDefault(); if (!name.trim()) { setFormError('Podaj nazwę kategorii.'); return } onSubmit({ name: name.trim(), color: '#7d72ea', icon: 'tag' }) } return <ModalShell title="Nowa kategoria" onClose={onClose}><form className="modal-form" onSubmit={submit}><label>Nazwa kategorii<input value={name} onChange={(event) => setName(event.target.value)} placeholder="np. Zwierzęta" autoFocus /></label>{formError && <div className="form-error">{formError}</div>}<div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Anuluj</button><button className="button primary" type="submit"><Check size={17} />Dodaj kategorię</button></div></form></ModalShell> }
 

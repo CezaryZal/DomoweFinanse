@@ -12,10 +12,10 @@ Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 - obsługa komunikatów błędów i stanów formularza;
 - obsługa sesji Supabase po odświeżeniu aplikacji;
 - wylogowanie użytkownika;
-- dashboard z przykładowymi wydatkami i kategoriami;
+- dashboard z wydatkami i kategoriami pobieranymi z bazy;
 - podstawowy responsywny interfejs zgodny z projektem graficznym.
 
-Wydatki i kategorie są obecnie przykładowymi danymi frontendowymi. Nie ma jeszcze tabel aplikacyjnych, migracji ani zapisu wydatków w bazie danych.
+Wydatki i kategorie są teraz przechowywane w Supabase Postgres. Aplikacja automatycznie tworzy podstawowe kategorie dla nowego użytkownika, a ręczne wydatki można zapisywać, odczytywać i usuwać z bazy.
 
 ## Uruchomienie lokalne
 
@@ -84,7 +84,7 @@ Docelowa architektura wykorzystuje:
 - Row Level Security — ograniczenie dostępu do danych właściwego gospodarstwa;
 - Supabase Edge Functions — operacje wymagające sekretów, AI lub dodatkowej walidacji.
 
-Na obecnym etapie używany jest tylko Supabase Auth. Nie utworzono jeszcze schematu danych aplikacji.
+Na obecnym etapie używane są Supabase Auth oraz Supabase Postgres. Schemat obejmuje tabele `categories` i `expenses`; pozostałe obszary domenowe nie zostały jeszcze zaimplementowane.
 
 ### Hosting docelowy
 
@@ -104,6 +104,9 @@ Docelowo po zalogowaniu użytkownik będzie mógł dodawać wydatki, tworzyć ka
 
 ### Etap 1 — wspólne gospodarstwo i ręczne wydatki
 
+- tabele `categories` i `expenses` z podstawowymi metadanymi;
+- odczyt i zapis danych przez klienta Supabase;
+- RLS ograniczające dane do zalogowanego użytkownika;
 - model gospodarstwa domowego i członków;
 - tabele Supabase Postgres z RLS;
 - zapisywanie, edycja i usuwanie wydatków;

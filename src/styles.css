@@ -112,6 +112,7 @@ h1, h2, h3, p { margin: 0; }
 .auth-feedback.error { color: #a63737; background: #fff0f0; }
 .auth-feedback.success { color: #18724b; background: #edfbf2; }
 .auth-loading { color: #64748b; font-size: 14px; }
+.data-error { align-items: center; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 12px; color: #be123c; display: flex; gap: 12px; justify-content: space-between; margin: 16px 24px 0; padding: 10px 12px 10px 16px; }
 .user-email { color: #7d8996; font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .login-card { width: min(100%, 360px); border: 1px solid #edf0f2; border-radius: 16px; padding: 28px; box-shadow: 0 12px 35px #1523320b; }
 .login-card h2 { font-size: 22px; margin-bottom: 7px; }.login-card p { color: #87929f; font-size: 13px; line-height: 1.45; margin-bottom: 20px; }
