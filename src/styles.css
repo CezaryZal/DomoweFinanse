@@ -90,14 +90,15 @@ h1, h2, h3, p { margin: 0; }
 .panel-header { display: flex; justify-content: space-between; color: #84909d; padding: 14px 0; font-size: 13px; }
 .panel-header strong { color: #17202a; }
 .list-empty { color: #84909d; font-size: 13px; padding: 38px 12px; text-align: center; }
-.delete-button { background: transparent; color: #a1abb5; padding: 7px; }
+.edit-button, .delete-button { align-items: center; background: transparent; color: #a1abb5; display: inline-flex; gap: 5px; padding: 7px; }.edit-button:hover { color: #3198f4; }
+.delete-button { padding: 7px; }
 .delete-button:hover { color: #d55c5c; }
 .category-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .category-card { border: 1px solid #edf0f2; border-radius: 13px; padding: 16px; display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center; }
 .category-large-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; grid-row: span 2; }
 .category-card strong, .category-card span { display: block; }
 .category-card strong { font-size: 14px; }
-.category-card small { grid-column: 1 / -1; color: #919ba8; font-size: 11px; }
+.category-card small { grid-column: 1 / -1; color: #919ba8; font-size: 11px; }.category-edit { grid-column: 1 / -1; justify-self: start; font-size: 12px; }
 .receipt-empty { border: 1px dashed #cfd7df; border-radius: 16px; min-height: 360px; display: grid; justify-items: center; align-content: center; gap: 11px; text-align: center; padding: 30px; }
 .empty-icon { color: #3097f0; background: #eaf5ff; border-radius: 15px; width: 58px; height: 58px; display: grid; place-items: center; }
 .receipt-empty h3 { font-size: 18px; }

@@ -64,6 +64,19 @@ export async function createCategory(userId: string, category: Omit<Category, 'i
   return mapCategory(data as CategoryRow)
 }
 
+export async function updateCategory(userId: string, categoryId: string, category: Omit<Category, 'id'>) {
+  const { data, error } = await supabase
+    .from('categories')
+    .update({ name: category.name, color: category.color, icon: category.icon, updated_at: new Date().toISOString() })
+    .eq('id', categoryId)
+    .eq('user_id', userId)
+    .select('id, name, color, icon')
+    .single()
+
+  if (error) throw error
+  return mapCategory(data as CategoryRow)
+}
+
 export async function createExpense(userId: string, expense: Omit<Expense, 'id'>) {
   const { data, error } = await supabase
     .from('expenses')
@@ -77,6 +90,28 @@ export async function createExpense(userId: string, expense: Omit<Expense, 'id'>
       notes: expense.notes ?? null,
       source: expense.source,
     })
+    .select('id, merchant, amount, currency, spent_at, category_id, notes, source')
+    .single()
+
+  if (error) throw error
+  return mapExpense(data as ExpenseRow)
+}
+
+export async function updateExpense(userId: string, expenseId: string, expense: Omit<Expense, 'id'>) {
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({
+      merchant: expense.merchant,
+      amount: expense.amount,
+      currency: expense.currency,
+      spent_at: expense.date,
+      category_id: expense.categoryId || null,
+      notes: expense.notes ?? null,
+      source: expense.source,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', expenseId)
+    .eq('user_id', userId)
     .select('id, merchant, amount, currency, spent_at, category_id, notes, source')
     .single()
 

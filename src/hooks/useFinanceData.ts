@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { defaultCategories } from '../data'
-import { createCategory, createExpense, deleteExpense, listCategories, listExpenses } from '../lib/finance'
+import { createCategory, createExpense, deleteExpense, listCategories, listExpenses, updateCategory, updateExpense } from '../lib/finance'
 import type { Category, Expense, Feedback } from '../types'
 
-function getErrorMessage(error: unknown, fallback: string): string {
+function getErrorMessage(error: unknown, fallback: string, duplicateMessage = 'Taka wartość już istnieje.'): string {
   if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
-    return 'Taka kategoria już istnieje.'
+    return duplicateMessage
   }
 
   return error instanceof Error && error.message ? error.message : fallback
@@ -82,7 +82,45 @@ export function useFinanceData(session: Session | null) {
       setFeedback({ type: 'success', message: 'Kategoria została dodana.' })
       return true
     } catch (saveError) {
-      setError(getErrorMessage(saveError, 'Nie udało się zapisać kategorii.'))
+      setError(getErrorMessage(saveError, 'Nie udało się zapisać kategorii.', 'Taka kategoria już istnieje.'))
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function editExpense(expenseId: string, expense: Omit<Expense, 'id'>): Promise<boolean> {
+    const userId = session?.user.id
+    if (!userId) return false
+
+    setSaving(true)
+    setError('')
+    try {
+      const savedExpense = await updateExpense(userId, expenseId, expense)
+      setExpenses((current) => current.map((item) => item.id === expenseId ? savedExpense : item))
+      setFeedback({ type: 'success', message: 'Wydatek został zaktualizowany.' })
+      return true
+    } catch (saveError) {
+      setError(getErrorMessage(saveError, 'Nie udało się zaktualizować wydatku.'))
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function editCategory(categoryId: string, category: Omit<Category, 'id'>): Promise<boolean> {
+    const userId = session?.user.id
+    if (!userId) return false
+
+    setSaving(true)
+    setError('')
+    try {
+      const savedCategory = await updateCategory(userId, categoryId, category)
+      setCategories((current) => current.map((item) => item.id === categoryId ? savedCategory : item).sort((a, b) => a.name.localeCompare(b.name)))
+      setFeedback({ type: 'success', message: 'Kategoria została zaktualizowana.' })
+      return true
+    } catch (saveError) {
+      setError(getErrorMessage(saveError, 'Nie udało się zaktualizować kategorii.', 'Taka kategoria już istnieje.'))
       return false
     } finally {
       setSaving(false)
@@ -111,5 +149,5 @@ export function useFinanceData(session: Session | null) {
     setFeedback(null)
   }
 
-  return { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, removeExpense, clearMessages }
+  return { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, editExpense, editCategory, removeExpense, clearMessages }
 }

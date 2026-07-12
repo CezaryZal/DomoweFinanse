@@ -20,7 +20,9 @@ function App() {
   const [isAuthReady, setAuthReady] = useState(false)
   const [isExpenseOpen, setExpenseOpen] = useState(false)
   const [isCategoryOpen, setCategoryOpen] = useState(false)
-  const { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, removeExpense, clearMessages } = useFinanceData(session)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  const { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, editExpense, editCategory, removeExpense, clearMessages } = useFinanceData(session)
 
   useEffect(() => {
     async function loadSession() {
@@ -52,26 +54,58 @@ function App() {
     <Sidebar activeView={view} onNavigate={setView} onSignOut={() => void signOut()} />
     <main className="main-content">
       <FeedbackBanner feedback={feedback} error={error} onDismiss={clearMessages} />
-      <Topbar onAddExpense={() => setExpenseOpen(true)} onOpenReceipt={() => setView('receipts')} onMenu={() => setView('dashboard')} userEmail={session.user.email ?? ''} onSignOut={() => void signOut()} />
-      {view === 'dashboard' && <Dashboard expenses={expenses} categories={categories} total={total} categoryTotals={categoryTotals} onNavigate={setView} onAddExpense={() => setExpenseOpen(true)} />}
-      {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} onAdd={() => setExpenseOpen(true)} onDelete={(id) => void removeExpense(id)} />}
-      {view === 'categories' && <CategoriesPage categories={categories} categoryTotals={categoryTotals} onAdd={() => setCategoryOpen(true)} />}
+      <Topbar onAddExpense={openNewExpense} onOpenReceipt={() => setView('receipts')} onMenu={() => setView('dashboard')} userEmail={session.user.email ?? ''} onSignOut={() => void signOut()} />
+      {view === 'dashboard' && <Dashboard expenses={expenses} categories={categories} total={total} categoryTotals={categoryTotals} onNavigate={setView} onAddExpense={openNewExpense} />}
+      {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} onAdd={openNewExpense} onDelete={(id) => void removeExpense(id)} onEdit={openExpenseEditor} />}
+      {view === 'categories' && <CategoriesPage categories={categories} categoryTotals={categoryTotals} onAdd={openNewCategory} onEdit={openCategoryEditor} />}
       {view === 'receipts' && <ReceiptsPage />}
     </main>
-    {isExpenseOpen && <ExpenseModal categories={categories} isSaving={isSaving} onClose={() => setExpenseOpen(false)} onSubmit={(expense) => void submitExpense(expense)} />}
-    {isCategoryOpen && <CategoryModal isSaving={isSaving} onClose={() => setCategoryOpen(false)} onSubmit={(category) => void submitCategory(category)} />}
-    <button className="mobile-add" onClick={() => setExpenseOpen(true)} aria-label="Dodaj wydatek"><Plus size={22} /></button>
+    {isExpenseOpen && <ExpenseModal key={editingExpense?.id ?? 'new-expense'} categories={categories} initialExpense={editingExpense} isSaving={isSaving} onClose={closeExpenseModal} onSubmit={(expense) => void submitExpense(expense)} />}
+    {isCategoryOpen && <CategoryModal key={editingCategory?.id ?? 'new-category'} initialCategory={editingCategory} isSaving={isSaving} onClose={closeCategoryModal} onSubmit={(category) => void submitCategory(category)} />}
+    <button className="mobile-add" onClick={openNewExpense} aria-label="Dodaj wydatek"><Plus size={22} /></button>
   </div>
 
+  function openNewExpense() {
+    setEditingExpense(null)
+    setExpenseOpen(true)
+  }
+
+  function openExpenseEditor(expense: Expense) {
+    setEditingExpense(expense)
+    setExpenseOpen(true)
+  }
+
+  function closeExpenseModal() {
+    setEditingExpense(null)
+    setExpenseOpen(false)
+  }
+
   async function submitExpense(expense: Omit<Expense, 'id'>) {
-    if (await addExpense(expense)) {
-      setExpenseOpen(false)
+    const saved = editingExpense ? await editExpense(editingExpense.id, expense) : await addExpense(expense)
+    if (saved) {
+      closeExpenseModal()
       setView('expenses')
     }
   }
 
+  function openNewCategory() {
+    setEditingCategory(null)
+    setCategoryOpen(true)
+  }
+
+  function openCategoryEditor(category: Category) {
+    setEditingCategory(category)
+    setCategoryOpen(true)
+  }
+
+  function closeCategoryModal() {
+    setEditingCategory(null)
+    setCategoryOpen(false)
+  }
+
   async function submitCategory(category: Omit<Category, 'id'>) {
-    if (await addCategory(category)) setCategoryOpen(false)
+    const saved = editingCategory ? await editCategory(editingCategory.id, category) : await addCategory(category)
+    if (saved) closeCategoryModal()
   }
 }
 

@@ -25,4 +25,13 @@ describe('ExpenseList', () => {
     expect(onDelete).not.toHaveBeenCalled()
     confirm.mockRestore()
   })
+
+  it('calls the edit handler for the selected expense', () => {
+    const onEdit = vi.fn()
+    render(<ExpenseList expenses={[expense]} categories={[]} onEdit={onEdit} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edytuj wydatek Biedronka' }))
+
+    expect(onEdit).toHaveBeenCalledWith(expense)
+  })
 })
