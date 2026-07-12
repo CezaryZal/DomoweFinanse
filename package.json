@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
+    "test": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.110.2",
@@ -14,11 +17,18 @@
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "typescript": "latest",
+    "typescript": "5.8.3",
     "vite": "latest"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "eslint": "^10.7.0",
+    "jsdom": "^29.1.1",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^4.1.10"
   }
 }
