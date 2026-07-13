@@ -144,10 +144,21 @@ export function useFinanceData(session: Session | null) {
     }
   }
 
+  async function refreshExpenses() {
+    const userId = session?.user.id
+    if (!userId) return
+
+    try {
+      setExpenses(await listExpenses(userId))
+    } catch (refreshError) {
+      setError(getErrorMessage(refreshError, 'Nie udało się odświeżyć wydatków.'))
+    }
+  }
+
   function clearMessages() {
     setError('')
     setFeedback(null)
   }
 
-  return { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, editExpense, editCategory, removeExpense, clearMessages }
+  return { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, editExpense, editCategory, removeExpense, refreshExpenses, clearMessages }
 }

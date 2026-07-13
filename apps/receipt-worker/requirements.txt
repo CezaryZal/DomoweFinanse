@@ -1,0 +1,5 @@
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+opencv-contrib-python==4.10.0.84
+supabase==2.31.0
+python-dotenv==1.2.2

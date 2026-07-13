@@ -13,9 +13,12 @@ Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 - obsługa sesji Supabase po odświeżeniu aplikacji;
 - wylogowanie użytkownika;
 - dashboard z wydatkami i kategoriami pobieranymi z bazy;
+- prywatne przesyłanie i wyświetlanie zdjęć paragonów;
+- kolejka zadań OCR i lokalny worker Python z PaddleOCR;
+- ręczna korekta wyniku OCR przed utworzeniem wydatku;
 - podstawowy responsywny interfejs zgodny z projektem graficznym.
 
-Wydatki i kategorie są teraz przechowywane w Supabase Postgres. Aplikacja automatycznie tworzy podstawowe kategorie dla nowego użytkownika, a ręczne wydatki można zapisywać, odczytywać i usuwać z bazy.
+Wydatki, kategorie i metadane paragonów są przechowywane w Supabase Postgres. Zdjęcia trafiają do prywatnego bucketu Supabase Storage, a ciężkie przetwarzanie obrazu wykonuje lokalny worker Python.
 
 ## Uruchomienie lokalne
 
@@ -73,7 +76,7 @@ pnpm run preview
 - Vite;
 - CSS;
 - `lucide-react` — ikony;
-- `@supabase/supabase-js` — komunikacja z Supabase Auth.
+- `@supabase/supabase-js` — komunikacja z Supabase Auth, Postgres i Storage.
 
 ### Backend i dane
 
@@ -84,7 +87,22 @@ Docelowa architektura wykorzystuje:
 - Row Level Security — ograniczenie dostępu do danych właściwego gospodarstwa;
 - Supabase Edge Functions — operacje wymagające sekretów, AI lub dodatkowej walidacji.
 
-Na obecnym etapie używane są Supabase Auth oraz Supabase Postgres. Schemat obejmuje tabele `categories` i `expenses`; pozostałe obszary domenowe nie zostały jeszcze zaimplementowane.
+Na obecnym etapie używane są Supabase Auth, Postgres i prywatny Storage. Schemat obejmuje tabele `categories`, `expenses`, `receipts`, `receipt_items` oraz `receipt_processing_jobs`.
+
+### Lokalny worker OCR
+
+Worker znajduje się w katalogu `apps/receipt-worker`. Wykorzystuje Python 3.11, OpenCV i polski model PP-OCRv5 przez PaddleOCR. Szczegółowa instrukcja instalacji i uruchomienia znajduje się w [README workera](apps/receipt-worker/README.md).
+
+Worker wymaga lokalnego sekretnego klucza Supabase. Klucz służy wyłącznie zaufanemu procesowi backendowemu i nie może trafić do zmiennych `VITE_*`, frontendu ani repozytorium.
+
+Przepływ paragonu:
+
+1. Użytkownik dodaje zdjęcie JPEG, PNG lub WebP do 10 MB.
+2. Zdjęcie trafia do prywatnego bucketu `receipt-images`.
+3. Powstaje zadanie w `receipt_processing_jobs`.
+4. Lokalny worker pobiera obraz, wykonuje OCR i zapisuje propozycję danych.
+5. Użytkownik poprawia sklep, datę, kwotę i kategorię.
+6. Zatwierdzenie tworzy wydatek ze źródłem `receipt`.
 
 ### Hosting docelowy
 
@@ -115,11 +133,13 @@ Docelowo po zalogowaniu użytkownik będzie mógł dodawać wydatki, tworzyć ka
 
 ### Etap 2 — paragony i AI/OCR
 
-- prywatne przechowywanie zdjęć paragonów;
-- analiza sprzedawcy, daty, pozycji i kwot;
-- propozycje kategorii;
-- kolejka elementów wymagających weryfikacji;
-- ręczna korekta danych przez użytkownika.
+- [x] prywatne przechowywanie zdjęć paragonów;
+- [x] podstawowa analiza sprzedawcy, daty, pozycji i kwot;
+- [x] kolejka elementów wymagających weryfikacji;
+- [x] ręczna korekta danych przez użytkownika;
+- [ ] benchmark na prawdziwych polskich paragonach;
+- [ ] propozycje kategorii na podstawie pozycji;
+- [ ] opcjonalny lokalny Qwen, jeżeli benchmark wykaże potrzebę.
 
 ### Etap 3 — kolejne źródła danych
 

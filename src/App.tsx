@@ -22,7 +22,7 @@ function App() {
   const [isCategoryOpen, setCategoryOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
-  const { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, editExpense, editCategory, removeExpense, clearMessages } = useFinanceData(session)
+  const { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, editExpense, editCategory, removeExpense, refreshExpenses, clearMessages } = useFinanceData(session)
 
   useEffect(() => {
     async function loadSession() {
@@ -58,7 +58,7 @@ function App() {
       {view === 'dashboard' && <Dashboard expenses={expenses} categories={categories} total={total} categoryTotals={categoryTotals} onNavigate={setView} onAddExpense={openNewExpense} />}
       {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} onAdd={openNewExpense} onDelete={(id) => void removeExpense(id)} onEdit={openExpenseEditor} />}
       {view === 'categories' && <CategoriesPage categories={categories} categoryTotals={categoryTotals} onAdd={openNewCategory} onEdit={openCategoryEditor} />}
-      {view === 'receipts' && <ReceiptsPage />}
+      {view === 'receipts' && <ReceiptsPage userId={session.user.id} categories={categories} onExpenseCreated={() => void refreshExpenses()} />}
     </main>
     {isExpenseOpen && <ExpenseModal key={editingExpense?.id ?? 'new-expense'} categories={categories} initialExpense={editingExpense} isSaving={isSaving} onClose={closeExpenseModal} onSubmit={(expense) => void submitExpense(expense)} />}
     {isCategoryOpen && <CategoryModal key={editingCategory?.id ?? 'new-category'} initialCategory={editingCategory} isSaving={isSaving} onClose={closeCategoryModal} onSubmit={(category) => void submitCategory(category)} />}
