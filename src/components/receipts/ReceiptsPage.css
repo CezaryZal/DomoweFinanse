@@ -1,0 +1,11 @@
+.receipt-card-actions { align-items: center; display: flex; gap: 2px; }
+.receipt-items-empty { color: #8b96a3; font-size: 12px; padding: 10px 0; }
+.receipt-item-edit { align-items: center; border-top: 1px solid #f0f2f4; display: grid; gap: 6px; grid-template-columns: minmax(120px, 1fr) 72px 92px 92px auto; padding: 8px 0; }
+.receipt-item-edit input { background: #fff; border: 1px solid #dfe3e7; border-radius: 8px; font-size: 12px; min-width: 0; outline: 0; padding: 7px; }
+.receipt-item-edit input:focus { border-color: #3198f4; box-shadow: 0 0 0 3px #3198f41c; }
+
+@media (max-width: 760px) {
+  .receipt-item-edit { grid-template-columns: 1fr 1fr; }
+  .receipt-item-edit input:first-child { grid-column: 1 / -1; }
+  .receipt-item-edit .delete-button { justify-self: end; }
+}

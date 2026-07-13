@@ -24,6 +24,7 @@ type ReceiptJobRow = {
 type ReceiptRow = {
   id: string
   expense_id: string | null
+  category_id: string | null
   status: ReceiptStatus
   storage_path: string
   original_filename: string
@@ -65,6 +66,7 @@ function mapReceipt(row: ReceiptRow): Receipt {
   return {
     id: row.id,
     expenseId: row.expense_id,
+    categoryId: row.category_id,
     status: row.status,
     storagePath: row.storage_path,
     originalFilename: row.original_filename,
@@ -106,7 +108,7 @@ export async function listReceipts(userId: string): Promise<Receipt[]> {
   const { data, error } = await supabase
     .from('receipts')
     .select(`
-      id, expense_id, status, storage_path, original_filename, merchant, purchased_at,
+      id, expense_id, category_id, status, storage_path, original_filename, merchant, purchased_at,
       total_amount, currency, confidence, validation_errors, parser_version, created_at,
       receipt_items (id, line_number, name, quantity, unit_price, total_price, confidence, source_text),
       receipt_processing_jobs (status, error_message)
@@ -163,18 +165,32 @@ export async function createReceiptImageUrl(storagePath: string): Promise<string
   return data.signedUrl
 }
 
-export async function updateReceiptReview(userId: string, receiptId: string, review: ReceiptReview) {
-  const { error } = await supabase
-    .from('receipts')
-    .update({
-      merchant: review.merchant.trim(),
-      purchased_at: review.purchasedAt,
-      total_amount: review.totalAmount,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', receiptId)
-    .eq('user_id', userId)
+export async function updateReceiptReview(receiptId: string, review: ReceiptReview) {
+  const { error } = await supabase.rpc('save_receipt_review', {
+    p_receipt_id: receiptId,
+    p_merchant: review.merchant.trim(),
+    p_purchased_at: review.purchasedAt,
+    p_total_amount: review.totalAmount,
+    p_category_id: review.categoryId,
+    p_items: review.items.map((item) => ({
+      name: item.name.trim(),
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      totalPrice: item.totalPrice,
+    })),
+  })
 
+  if (error) throw error
+}
+
+export async function deleteReceipt(receiptId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('delete_receipt', { p_receipt_id: receiptId })
+  if (error) throw error
+  return data as string
+}
+
+export async function deleteReceiptImage(storagePath: string) {
+  const { error } = await supabase.storage.from(RECEIPT_BUCKET).remove([storagePath])
   if (error) throw error
 }
 

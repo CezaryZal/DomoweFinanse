@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { approveReceipt, createReceiptImageUrl, listReceipts, updateReceiptReview, uploadReceipt } from '../lib/receipts'
+import { approveReceipt, createReceiptImageUrl, deleteReceipt, deleteReceiptImage, listReceipts, updateReceiptReview, uploadReceipt } from '../lib/receipts'
 import type { Feedback, Receipt, ReceiptReview } from '../types'
 
 export function useReceipts(userId: string, onExpenseCreated: () => void) {
@@ -60,7 +60,7 @@ export function useReceipts(userId: string, onExpenseCreated: () => void) {
     setSaving(true)
     setFeedback(null)
     try {
-      await updateReceiptReview(userId, receiptId, review)
+      await updateReceiptReview(receiptId, review)
       setFeedback({ type: 'success', message: 'Korekta paragonu została zapisana.' })
       await refresh(false)
       return true
@@ -89,5 +89,30 @@ export function useReceipts(userId: string, onExpenseCreated: () => void) {
     }
   }
 
-  return { receipts, imageUrls, isLoading, isSaving, feedback, upload, saveReview, approve, clearFeedback: () => setFeedback(null) }
+  async function remove(receipt: Receipt) {
+    setSaving(true)
+    setFeedback(null)
+    try {
+      const storagePath = await deleteReceipt(receipt.id)
+      try {
+        await deleteReceiptImage(storagePath)
+      } catch {
+        setFeedback({ type: 'error', message: 'Usunięto dane paragonu, ale nie udało się usunąć zdjęcia ze Storage.' })
+        await refresh(false)
+        onExpenseCreated()
+        return false
+      }
+      setFeedback({ type: 'success', message: 'Paragon, zdjęcie oraz powiązany wydatek zostały usunięte.' })
+      await refresh(false)
+      onExpenseCreated()
+      return true
+    } catch (error) {
+      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się usunąć paragonu.' })
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return { receipts, imageUrls, isLoading, isSaving, feedback, upload, saveReview, approve, remove, clearFeedback: () => setFeedback(null) }
 }

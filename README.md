@@ -16,6 +16,7 @@ Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 - prywatne przesyłanie i wyświetlanie zdjęć paragonów;
 - kolejka zadań OCR i lokalny worker Python z PaddleOCR;
 - ręczna korekta wyniku OCR przed utworzeniem wydatku;
+- edycja danych i pozycji analizowanego paragonu oraz usuwanie paragonu wraz z jego obrazem; usunięcie zatwierdzonego paragonu usuwa także powiązany wydatek;
 - podstawowy responsywny interfejs zgodny z projektem graficznym.
 
 Wydatki, kategorie i metadane paragonów są przechowywane w Supabase Postgres. Zdjęcia trafiają do prywatnego bucketu Supabase Storage, a ciężkie przetwarzanie obrazu wykonuje lokalny worker Python.

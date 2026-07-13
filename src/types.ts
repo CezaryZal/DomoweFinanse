@@ -36,9 +36,17 @@ export type ReceiptItem = {
   sourceText: string | null
 }
 
+export type ReceiptItemDraft = {
+  name: string
+  quantity: number | null
+  unitPrice: number | null
+  totalPrice: number
+}
+
 export type Receipt = {
   id: string
   expenseId: string | null
+  categoryId: string | null
   status: ReceiptStatus
   storagePath: string
   originalFilename: string
@@ -59,4 +67,6 @@ export type ReceiptReview = {
   merchant: string
   purchasedAt: string
   totalAmount: number
+  categoryId: string | null
+  items: ReceiptItemDraft[]
 }
