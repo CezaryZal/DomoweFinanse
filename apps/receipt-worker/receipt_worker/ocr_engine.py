@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -11,17 +12,67 @@ from paddleocr import PaddleOCR
 from .models import OcrLine
 
 
-def preprocess_image(source: Path, target: Path) -> None:
+def _deskew(image: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+    threshold = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    coordinates = np.column_stack(np.where(threshold > 0))
+    if len(coordinates) < 100:
+        return image
+
+    angle = cv2.minAreaRect(coordinates)[-1]
+    angle = -(90 + angle) if angle < -45 else -angle
+    if abs(angle) < 0.2:
+        return image
+
+    height, width = image.shape[:2]
+    center = (width // 2, height // 2)
+    matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+    return cv2.warpAffine(image, matrix, (width, height), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+
+def _write_image(path: Path, image: np.ndarray) -> Path:
+    if not cv2.imwrite(str(path), image):
+        raise RuntimeError("Nie udało się zapisać obrazu po przygotowaniu.")
+    return path
+
+
+def preprocess_images(source: Path, target_directory: Path) -> list[Path]:
     image = cv2.imread(str(source), cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError("Nie można odczytać przesłanego obrazu.")
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    deskewed = _deskew(image)
+    height, width = deskewed.shape[:2]
+    scale = 2 if max(height, width) < 2800 else 1
+    if scale > 1:
+        deskewed = cv2.resize(deskewed, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+    gray = cv2.cvtColor(deskewed, cv2.COLOR_BGR2GRAY)
     denoised = cv2.fastNlMeansDenoising(gray, None, 8, 7, 21)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(denoised)
-    if not cv2.imwrite(str(target), enhanced):
-        raise RuntimeError("Nie udało się zapisać obrazu po przygotowaniu.")
+    adaptive = cv2.adaptiveThreshold(
+        enhanced,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        9,
+    )
+    otsu = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+
+    return [
+        source,
+        _write_image(target_directory / "prepared-enhanced.png", enhanced),
+        _write_image(target_directory / "prepared-adaptive.png", adaptive),
+        _write_image(target_directory / "prepared-otsu.png", otsu),
+    ]
+
+
+def preprocess_image(source: Path, target: Path) -> None:
+    """Backward-compatible single-image preprocessing helper."""
+    variants = preprocess_images(source, target.parent)
+    shutil.copyfile(variants[1], target)
 
 
 def _to_payload(value: Any) -> dict[str, Any]:

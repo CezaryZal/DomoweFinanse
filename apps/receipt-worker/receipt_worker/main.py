@@ -7,8 +7,8 @@ import time
 from pathlib import Path
 
 from .config import Settings
-from .ocr_engine import ReceiptOcrEngine, preprocess_image
-from .parser import parse_receipt
+from .ocr_engine import ReceiptOcrEngine, preprocess_images
+from .parser import parse_receipt, select_best_parse
 from .repository import ReceiptRepository
 
 LOGGER = logging.getLogger("receipt-worker")
@@ -37,13 +37,20 @@ class ReceiptWorker:
                 directory = Path(temp_directory)
                 source_suffix = Path(receipt["storage_path"]).suffix or ".jpg"
                 source = directory / f"source{source_suffix}"
-                prepared = directory / "prepared.png"
                 source.write_bytes(self.repository.download_image(receipt["storage_path"]))
-                preprocess_image(source, prepared)
-                lines = self.ocr.recognise(prepared)
-                if not lines:
-                    raise RuntimeError("PaddleOCR nie zwrócił żadnego tekstu.")
-                self.repository.complete_job(job, parse_receipt(lines))
+                candidates = []
+                for prepared in preprocess_images(source, directory):
+                    try:
+                        lines = self.ocr.recognise(prepared)
+                    except Exception:
+                        LOGGER.exception("Błąd OCR dla wariantu obrazu %s", prepared.name)
+                        continue
+                    if lines:
+                        candidates.append(parse_receipt(lines))
+
+                if not candidates:
+                    raise RuntimeError("PaddleOCR nie zwrócił żadnego tekstu z dostępnych wariantów obrazu.")
+                self.repository.complete_job(job, select_best_parse(candidates))
             LOGGER.info("Paragon %s oczekuje na weryfikację użytkownika", receipt["id"])
         except Exception as error:  # Worker must record failures before continuing.
             LOGGER.exception("Błąd przetwarzania paragonu %s", receipt["id"])

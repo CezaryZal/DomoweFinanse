@@ -1,6 +1,6 @@
 # Lokalny worker OCR paragonów
 
-Worker pobiera zadania z Supabase, pobiera zdjęcia z prywatnego bucketu `receipt-images`, przygotowuje obraz przez OpenCV i uruchamia polski model PP-OCRv5 przez PaddleOCR. Wynik jest parsowany regułami i zawsze trafia do ręcznej weryfikacji w aplikacji.
+Worker pobiera zadania z Supabase, pobiera zdjęcia z prywatnego bucketu `receipt-images`, przygotowuje kilka wariantów obrazu przez OpenCV i uruchamia polski model PP-OCRv5 przez PaddleOCR. Wynik jest parsowany regułami i zawsze trafia do ręcznej weryfikacji w aplikacji.
 
 ## Wymagania
 
@@ -54,9 +54,21 @@ Testy nie wymagają instalowania PaddleOCR:
 python -m unittest discover -s tests -v
 ```
 
-## Ograniczenia pierwszej wersji
+## Przygotowanie obrazu i wybór wyniku
 
-- parser rozpoznaje podstawowy sklep, datę, sumę i wiersze zakończone ceną;
+Dla każdego paragonu worker sprawdza oryginalny obraz oraz warianty:
+
+- poprawiony kontrast po odszumianiu;
+- progowanie adaptacyjne, pomocne przy nierównym tle;
+- progowanie Otsu, pomocne przy równomiernym skanie.
+
+Przed przygotowaniem wariantów obraz jest prostowany, a mniejsze obrazy są powiększane. Parser porównuje wyniki i preferuje wariant, który rozpoznaje sklep, datę, sumę i pozycje oraz zachowuje zgodność sum.
+
+## Ograniczenia obecnej wersji
+
+- parser rozpoznaje podstawowy sklep, datę, sumę także z sąsiedniej linii oraz wiersze zakończone ceną;
+- data, NIP, VAT, informacje o płatności i nagłówki nie powinny być zapisywane jako pozycje;
 - ilości, rabaty i złożone układy będą rozwijane na podstawie benchmarku prawdziwych paragonów;
 - Qwen nie jest jeszcze używany;
+- kilka wariantów OCR zwiększa czas przetwarzania na CPU;
 - worker używa zaufanego sekretnego klucza i powinien działać wyłącznie na kontrolowanym komputerze.
