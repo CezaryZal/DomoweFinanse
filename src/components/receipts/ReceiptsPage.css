@@ -3,6 +3,15 @@
 .receipt-item-edit { align-items: center; border-top: 1px solid #f0f2f4; display: grid; gap: 6px; grid-template-columns: minmax(120px, 1fr) 72px 92px 92px auto; padding: 8px 0; }
 .receipt-item-edit input { background: #fff; border: 1px solid #dfe3e7; border-radius: 8px; font-size: 12px; min-width: 0; outline: 0; padding: 7px; }
 .receipt-item-edit input:focus { border-color: #3198f4; box-shadow: 0 0 0 3px #3198f41c; }
+.button.danger { background: #c84b4b; color: #fff; }
+.button.danger:hover { background: #ad3939; }
+.receipt-delete-backdrop { z-index: 20; }
+.receipt-delete-modal { width: min(100%, 430px); }
+.receipt-delete-content { padding: 20px; }
+.receipt-delete-icon { align-items: center; background: #fff0f0; border-radius: 12px; color: #c84b4b; display: inline-flex; height: 44px; justify-content: center; margin-bottom: 13px; width: 44px; }
+.receipt-delete-content p { color: #647181; font-size: 13px; line-height: 1.5; }
+.receipt-delete-content strong { color: #17202a; }
+.receipt-delete-warning { background: #fff8e8; border-radius: 8px; color: #8a651d !important; margin-top: 12px; padding: 9px 10px; }
 
 @media (max-width: 760px) {
   .receipt-item-edit { grid-template-columns: 1fr 1fr; }
