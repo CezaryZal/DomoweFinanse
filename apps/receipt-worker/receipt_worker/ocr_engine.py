@@ -12,6 +12,15 @@ from paddlex.inference import load_pipeline_config
 
 from .models import OcrLine
 
+MAX_DESKEW_ANGLE = 15.0
+
+
+def _deskew_angle(raw_angle: float) -> float | None:
+    correction = -(90 + raw_angle) if raw_angle < -45 else -raw_angle
+    if abs(correction) < 0.2 or abs(correction) > MAX_DESKEW_ANGLE:
+        return None
+    return correction
+
 
 def _deskew(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
@@ -20,9 +29,8 @@ def _deskew(image: np.ndarray) -> np.ndarray:
     if len(coordinates) < 100:
         return image
 
-    angle = cv2.minAreaRect(coordinates)[-1]
-    angle = -(90 + angle) if angle < -45 else -angle
-    if abs(angle) < 0.2:
+    angle = _deskew_angle(cv2.minAreaRect(coordinates)[-1])
+    if angle is None:
         return image
 
     height, width = image.shape[:2]

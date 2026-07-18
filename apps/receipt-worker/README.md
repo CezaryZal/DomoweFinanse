@@ -74,7 +74,7 @@ Dla każdego paragonu worker sprawdza oryginalny obraz oraz warianty:
 - progowanie adaptacyjne, pomocne przy nierównym tle;
 - progowanie Otsu, pomocne przy równomiernym skanie.
 
-Przed przygotowaniem wariantów obraz jest prostowany, a mniejsze obrazy są powiększane. Parser porównuje wyniki i preferuje wariant, który rozpoznaje sklep, datę, sumę i pozycje oraz zachowuje zgodność sum.
+Przed przygotowaniem wariantów obraz jest prostowany wyłącznie o niewielki przechył, a mniejsze obrazy są powiększane. Korekta zbliżona do 90° nie jest traktowana jako prostowanie; orientacją dokumentu zajmuje się OCR. Parser porównuje wyniki i preferuje wariant, który rozpoznaje sklep, datę, sumę i pozycje oraz zachowuje zgodność sum.
 
 ## Rozpoznawanie pozycji produktów
 
@@ -85,13 +85,15 @@ Parser analizuje wyłącznie sekcję między nagłówkiem `PARAGON FISKALNY` a c
 
 Gdy wiersz ilości zawiera tylko cenę jednostkową, np. `2 × 6,00`, parser szuka samodzielnej kwoty po prawej stronie i przyjmuje ją jako cenę końcową tylko po potwierdzeniu obliczenia `2 × 6,00 = 12,00`.
 
+Wzorzec ilości obsługuje znaki `x`, `*` i `×`. Jeżeli liczba opisów produktów różni się od liczby wierszy cen, parser dobiera je według położenia pionowego; ma to zapobiegać przesunięciu wszystkich kolejnych par po pominiętym wierszu OCR. Dla układów z równą liczbą wierszy zachowuje dotychczasową kolejność odczytu.
+
 Na początku parser szuka końcowej sumy oznaczonej `SUMA PLN` albo `DO ZAPŁATY PLN`. Etykieta może być odczytana jako jedno pole albo jako bliskie pola, np. osobno `SUMA` i `PLN`; kwota musi znajdować się w tym samym wierszu lub po jego prawej stronie. Wpisy `SUMA PTU` i `VAT` nie są traktowane jako suma paragonu.
 
 `PARAGON FISKALNY` jest silnym sygnałem początku sekcji produktów i może być rozpoznany jako jedno albo dwa sąsiadujące pola OCR. Gdy go brakuje, worker używa bezpiecznego trybu awaryjnego: rozpoczyna analizę przy pierwszym wiarygodnym wierszu ilość × cena i oznacza wynik do ręcznej weryfikacji. Nie dobiera wtedy danych sklepu ani adresu z górnej części dokumentu jako produktów.
 
 Jeśli są dostępne, worker zapisuje również ilość i cenę jednostkową. Nie poprawia jednak samodzielnie literówek pochodzących z OCR — niepewny odczyt nazwy nadal wymaga ręcznej weryfikacji.
 
-Nazwa sprzedawcy jest wybierana z nagłówka przed `PARAGON FISKALNY`. Adres, NIP i dane prawne firmy są odrzucane; numer placówki oraz kod pocztowy na końcu pierwszej linii są usuwane z wyświetlanej nazwy, np. `HEBE R199, 10-748 OLSZTYN` → `HEBE`.
+Nazwa sprzedawcy jest wybierana z nagłówka przed `PARAGON FISKALNY`. Wiersz zawierający nazwę przed `sp. z o.o.` ma pierwszeństwo przed ogólnymi kandydatami, np. `AUCHAN POLSKA Sp. z o.o.` → `AUCHAN POLSKA`; rozpoznawany jest też OCR-owy wariant `0.0.`. Adres, NIP, REGON, BDO (również błędnie odczytane jako `BD0`) i dane prawne firmy są odrzucane; numer placówki oraz kod pocztowy na końcu pierwszej linii są usuwane z wyświetlanej nazwy, np. `HEBE R199, 10-748 OLSZTYN` → `HEBE`. Jeśli nagłówek zawiera wyłącznie niepewne fragmenty OCR, worker pozostawia nazwę pustą do ręcznej korekty zamiast zgadywać identyfikator firmy.
 
 ## Ograniczenia obecnej wersji
 

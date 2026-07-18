@@ -2,7 +2,7 @@ from decimal import Decimal
 from unittest import TestCase
 
 from receipt_worker.models import OcrLine
-from receipt_worker.parser import parse_receipt
+from receipt_worker.parser import find_merchant, parse_receipt
 
 
 class ReceiptParserTests(TestCase):
@@ -150,6 +150,46 @@ class ReceiptParserTests(TestCase):
         self.assertEqual(parsed.total_amount, Decimal("12.00"))
         self.assertEqual(parsed.validation_errors, [])
 
+    def test_parses_unicode_multiplication_symbol_for_multiple_quantity_product(self) -> None:
+        lines = [
+            OcrLine("SKLEP TEST", 0.99),
+            OcrLine("13.07.2026", 0.99),
+            OcrLine("PARAGON FISKALNY", 0.99, [[10, 80], [300, 80], [300, 100], [10, 100]]),
+            OcrLine("HIMALAYA GUM", 0.95, [[10, 110], [300, 110], [300, 135], [10, 135]]),
+            OcrLine("2 ×12,99 25,98A", 0.98, [[420, 115], [590, 115], [590, 140], [420, 140]]),
+            OcrLine("SUMA PLN 25,98", 0.99, [[10, 190], [300, 190], [300, 220], [10, 220]]),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual(len(parsed.items), 1)
+        item = parsed.items[0]
+        self.assertEqual(item.name, "HIMALAYA GUM")
+        self.assertEqual(item.quantity, Decimal("2"))
+        self.assertEqual(item.unit_price, Decimal("12.99"))
+        self.assertEqual(item.total_price, Decimal("25.98"))
+        self.assertEqual(parsed.total_amount, Decimal("25.98"))
+        self.assertEqual(parsed.validation_errors, [])
+
+    def test_spatial_alignment_skips_unpriced_description_without_shifting_later_items(self) -> None:
+        lines = [
+            OcrLine("SKLEP TEST", 0.99),
+            OcrLine("PARAGON FISKALNY", 0.99, [[10, 80], [300, 80], [300, 100], [10, 100]]),
+            OcrLine("PRODUKT A", 0.96, [[10, 110], [300, 110], [300, 135], [10, 135]]),
+            OcrLine("1 x10,00 10,00A", 0.98, [[420, 115], [590, 115], [590, 140], [420, 140]]),
+            OcrLine("OPIS BEZ CENY", 0.96, [[10, 170], [300, 170], [300, 195], [10, 195]]),
+            OcrLine("PRODUKT C", 0.96, [[10, 230], [300, 230], [300, 255], [10, 255]]),
+            OcrLine("1 x30,00 30,00A", 0.98, [[420, 235], [590, 235], [590, 260], [420, 260]]),
+            OcrLine("SUMA PLN 40,00", 0.99, [[10, 300], [300, 300], [300, 330], [10, 330]]),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual([item.name for item in parsed.items], ["PRODUKT A", "PRODUKT C"])
+        self.assertEqual([item.total_price for item in parsed.items], [Decimal("10.00"), Decimal("30.00")])
+        self.assertTrue(any("ceny dla cz" in error for error in parsed.validation_errors))
+        self.assertFalse(any("40.00 PLN r" in error for error in parsed.validation_errors))
+
     def test_uses_name_before_company_suffix_and_skips_promotions(self) -> None:
         lines = [
             OcrLine("Dołącz do nas na Facebooku", 0.99),
@@ -167,6 +207,31 @@ class ReceiptParserTests(TestCase):
         parsed = parse_receipt(lines)
 
         self.assertEqual(parsed.merchant, "INGLOT")
+
+    def test_prefers_name_before_company_suffix_over_earlier_generic_header_text(self) -> None:
+        lines = [
+            OcrLine("HIPERMARKET AUCHAN", 0.99),
+            OcrLine("AUCHAN POLSKA SP.Z 0.0.", 0.96),
+            OcrLine("PARAGON FISKALNY", 0.99),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual(parsed.merchant, "AUCHAN POLSKA")
+
+    def test_does_not_use_bdo_or_unreliable_header_fragments_as_merchant(self) -> None:
+        lines = [
+            OcrLine("3", 0.22),
+            OcrLine("y (d no ds epadn : y)", 0.45),
+            OcrLine("( d p (a)", 0.53),
+            OcrLine("hughy fi IP", 0.61),
+            OcrLine("BD0:000514349", 0.89),
+            OcrLine("ur:35618", 0.96),
+            OcrLine("PALSOGON", 0.78),
+            OcrLine("FISKAL NY", 0.96),
+        ]
+
+        self.assertIsNone(find_merchant(lines))
 
     def test_prefers_sum_pln_in_the_right_column_over_tax_total(self) -> None:
         lines = [

@@ -8,13 +8,13 @@ from decimal import Decimal, InvalidOperation
 
 from .models import OcrLine, ParsedItem, ParsedReceipt
 
-PARSER_VERSION = "paddleocr-rules-0.3.4"
+PARSER_VERSION = "paddleocr-rules-0.3.7"
 AMOUNT_RE = re.compile(r"(?<![\d.,])([0-9]{1,7}[,.][0-9]{2})(?![\d.,])")
 STANDALONE_AMOUNT_RE = re.compile(r"^\s*([0-9]{1,7}[,.][0-9]{2})(?:\s*[A-Z])?\s*$", re.IGNORECASE)
 DATE_DMY_RE = re.compile(r"(?<!\d)(\d{2})[.\-/](\d{2})[.\-/](\d{2}|\d{4})(?!\d)")
 DATE_YMD_RE = re.compile(r"(?<!\d)(\d{4})[.\-/](\d{2})[.\-/](\d{2})(?!\d)")
 QUANTITY_PREFIX_RE = re.compile(
-    r"(?<![\d.,])(?P<quantity>\d{1,5}(?:[,.]\d{1,3})?)\s*(?:SZT\.?|X|\*)\s*",
+    r"(?<![\d.,])(?P<quantity>\d{1,5}(?:[,.]\d{1,3})?)\s*(?:SZT\.?|X|×|\*)\s*",
     re.IGNORECASE,
 )
 PARAGON_FRAGMENT_RE = re.compile(r"PARA[GC][O0]N")
@@ -53,9 +53,11 @@ POSTAL_CODE_RE = re.compile(r"\d{2}-\d{3}")
 POSTAL_ADDRESS_RE = re.compile(r"^\d{2}-\d{3}\b")
 ADDRESS_PREFIX_RE = re.compile(r"^(?:UL(?:ICA)?|AL(?:EJA)?|PL(?:AC)?|OS(?:IEDLE)?)\.?\s")
 BRANCH_CODE_RE = re.compile(r"\s+[A-Z]{1,3}\d{1,5}$")
+BUSINESS_IDENTIFIER_RE = re.compile(r"^(?:NIP|REGON|BD[O0])\s*[:.]?\s*\d{6,}$")
+MIN_GENERIC_MERCHANT_CONFIDENCE = 0.7
 LEGAL_ENTITY_MARKERS = ("SP. Z O.O", "SP Z O O", "SPOLKA", "S.A.", "S A")
 COMPANY_SUFFIX_RE = re.compile(
-    r"(?:\bSP\.?\s*Z\.?\s*O\.?\s*O\.?|\bSP[ÓO]ŁKA\s+Z\s+OGRANICZON[ĄA]\s+ODPOWIEDZIALNOŚCI[ĄA])(?=\s|$)",
+    r"(?:\bSP\.?\s*Z\.?\s*[O0]\.?\s*[O0]\.?|\bSP[ÓO]ŁKA\s+Z\s+OGRANICZON[ĄA]\s+ODPOWIEDZIALNOŚCI[ĄA])(?=\s|$)",
     re.IGNORECASE,
 )
 PROMOTIONAL_MARKERS = ("FACEBOOK", "WWW.", "HTTP", "DOLACZ DO NAS", "INSTAGRAM", "TIKTOK")
@@ -192,7 +194,9 @@ def is_receipt_header(text: str) -> bool:
 
 def is_paragon_fragment(text: str) -> bool:
     compact = re.sub(r"[^A-Z0-9]", "", normalise_text(text))
-    return PARAGON_FRAGMENT_RE.search(compact) is not None
+    return PARAGON_FRAGMENT_RE.search(compact) is not None or (
+        compact.startswith("PA") and compact.endswith("GON") and 6 <= len(compact) <= 10
+    )
 
 
 def is_fiscal_fragment(text: str) -> bool:
@@ -297,6 +301,16 @@ def is_address_line(text: str) -> bool:
     return ADDRESS_PREFIX_RE.search(normalised) is not None or POSTAL_ADDRESS_RE.search(normalised) is not None
 
 
+def is_business_identifier_line(text: str) -> bool:
+    normalised = normalise_text(text)
+    if BUSINESS_IDENTIFIER_RE.fullmatch(normalised) is not None:
+        return True
+
+    letters = sum(character.isalpha() for character in normalised)
+    digits = sum(character.isdigit() for character in normalised)
+    return digits >= 5 and digits >= letters * 2
+
+
 def clean_merchant_name(text: str) -> str:
     before_postal_code = POSTAL_CODE_RE.split(text, maxsplit=1)[0]
     cleaned = before_postal_code.strip(" ,;-")
@@ -325,6 +339,8 @@ def find_merchant(lines: list[OcrLine]) -> str | None:
         normalised = normalise_text(text)
         if is_promotional_line(text) or is_address_line(text) or is_date_line(text):
             continue
+        if is_business_identifier_line(text) or is_paragon_fragment(text) or is_fiscal_fragment(text):
+            continue
         if any(word in normalised for word in ("NIP", "PARAGON", "FISKAL", "DATA", "KASA", "VAT", "PTU", "DOK")):
             continue
 
@@ -332,6 +348,8 @@ def find_merchant(lines: list[OcrLine]) -> str | None:
         company_name = name_before_company_suffix(text)
         if company_name is not None:
             company_candidates.append((index, line.confidence + position_score * 0.6 + 0.3, line.confidence, company_name))
+            continue
+        if line.confidence < MIN_GENERIC_MERCHANT_CONFIDENCE:
             continue
 
         cleaned = clean_merchant_name(text)
@@ -346,10 +364,8 @@ def find_merchant(lines: list[OcrLine]) -> str | None:
         candidates.append((index, score, line.confidence, cleaned))
 
     if company_candidates:
-        earliest_company_index = min(candidate[0] for candidate in company_candidates)
-        if not any(index < earliest_company_index for index, _, _, _ in candidates):
-            _, score, confidence, name = max(company_candidates, key=lambda candidate: (candidate[1], candidate[2]))
-            return name
+        _, _, _, name = max(company_candidates, key=lambda candidate: (candidate[1], candidate[2]))
+        return name
     return max(candidates, key=lambda candidate: (candidate[1], candidate[2]))[3] if candidates else None
 
 
@@ -592,6 +608,76 @@ def item_from_single_line(line: PositionedLine) -> ParsedItem | None:
     return build_item(line.line.text[: matches[-1].start()], [line], total_price)
 
 
+def description_price_pair_cost(description: PositionedLine, price_row: PositionedLine) -> float:
+    description_center = line_vertical_center(description)
+    price_center = line_vertical_center(price_row)
+    if (
+        description_center is None
+        or price_center is None
+        or description.y_min is None
+        or description.y_max is None
+        or price_row.y_min is None
+        or price_row.y_max is None
+    ):
+        return abs(description.index - price_row.index) * 0.2
+
+    description_height = description.y_max - description.y_min
+    price_height = price_row.y_max - price_row.y_min
+    typical_row_height = max(40.0, description_height, price_height)
+    return abs(description_center - price_center) / typical_row_height
+
+
+def align_description_price_rows(
+    descriptions: list[PositionedLine], price_rows: list[PositionedLine]
+) -> tuple[list[tuple[PositionedLine, PositionedLine]], int, int]:
+    if len(descriptions) == len(price_rows):
+        return list(zip(descriptions, price_rows)), 0, 0
+    if not descriptions or not price_rows:
+        return [], len(price_rows), len(descriptions)
+
+    gap_cost = 1.5
+    rows = len(descriptions)
+    columns = len(price_rows)
+    costs = [[0.0] * (columns + 1) for _ in range(rows + 1)]
+    actions: list[list[str | None]] = [[None] * (columns + 1) for _ in range(rows + 1)]
+
+    for row in range(1, rows + 1):
+        costs[row][0] = costs[row - 1][0] + gap_cost
+        actions[row][0] = "skip_description"
+    for column in range(1, columns + 1):
+        costs[0][column] = costs[0][column - 1] + gap_cost
+        actions[0][column] = "skip_price"
+
+    for row in range(1, rows + 1):
+        for column in range(1, columns + 1):
+            options = [
+                (costs[row - 1][column - 1] + description_price_pair_cost(descriptions[row - 1], price_rows[column - 1]), "pair"),
+                (costs[row - 1][column] + gap_cost, "skip_description"),
+                (costs[row][column - 1] + gap_cost, "skip_price"),
+            ]
+            costs[row][column], actions[row][column] = min(options, key=lambda option: option[0])
+
+    pairs: list[tuple[PositionedLine, PositionedLine]] = []
+    unmatched_descriptions = 0
+    unmatched_price_rows = 0
+    row = rows
+    column = columns
+    while row or column:
+        action = actions[row][column]
+        if action == "pair":
+            pairs.append((descriptions[row - 1], price_rows[column - 1]))
+            row -= 1
+            column -= 1
+        elif action == "skip_description":
+            unmatched_descriptions += 1
+            row -= 1
+        else:
+            unmatched_price_rows += 1
+            column -= 1
+
+    return list(reversed(pairs)), unmatched_price_rows, unmatched_descriptions
+
+
 def find_items(lines: list[OcrLine]) -> ItemExtraction:
     items: list[ParsedItem] = []
     descriptions: list[PositionedLine] = []
@@ -616,9 +702,9 @@ def find_items(lines: list[OcrLine]) -> ItemExtraction:
         if is_product_description(line.line.text):
             descriptions.append(line)
 
-    pair_count = min(len(descriptions), len(price_rows))
+    description_price_pairs, unmatched_price_rows, unmatched_descriptions = align_description_price_rows(descriptions, price_rows)
     used_total_line_numbers: set[int] = set()
-    for description, price_row in zip(descriptions[:pair_count], price_rows[:pair_count]):
+    for description, price_row in description_price_pairs:
         details = quantity_price_details(price_row.line.text)
         if details is None:
             continue
@@ -636,8 +722,8 @@ def find_items(lines: list[OcrLine]) -> ItemExtraction:
 
     return ItemExtraction(
         items=sorted(items, key=lambda item: item.line_number),
-        unmatched_price_rows=len(price_rows) - pair_count,
-        unmatched_description_rows=len(descriptions) - pair_count,
+        unmatched_price_rows=unmatched_price_rows,
+        unmatched_description_rows=unmatched_descriptions,
         fallback_used=fallback_used,
     )
 
