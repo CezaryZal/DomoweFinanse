@@ -8,6 +8,7 @@ from typing import Any, Iterable
 import cv2
 import numpy as np
 from paddleocr import PaddleOCR
+from paddlex.inference import load_pipeline_config
 
 from .models import OcrLine
 
@@ -100,9 +101,12 @@ def _normalise_bbox(value: Any) -> list[list[float]]:
 
 class ReceiptOcrEngine:
     def __init__(self) -> None:
+        pipeline_config = load_pipeline_config("OCR")
+        pipeline_config["SubModules"]["TextDetection"]["max_side_limit"] = 5000
         self._engine = PaddleOCR(
             text_detection_model_name="PP-OCRv5_mobile_det",
             text_recognition_model_name="latin_PP-OCRv5_mobile_rec",
+            paddlex_config=pipeline_config,
             enable_mkldnn=False,
             use_doc_orientation_classify=True,
             use_doc_unwarping=True,
