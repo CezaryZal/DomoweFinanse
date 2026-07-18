@@ -8,15 +8,20 @@ from decimal import Decimal, InvalidOperation
 
 from .models import OcrLine, ParsedItem, ParsedReceipt
 
-PARSER_VERSION = "paddleocr-rules-0.3.1"
+PARSER_VERSION = "paddleocr-rules-0.3.4"
 AMOUNT_RE = re.compile(r"(?<![\d.,])([0-9]{1,7}[,.][0-9]{2})(?![\d.,])")
+STANDALONE_AMOUNT_RE = re.compile(r"^\s*([0-9]{1,7}[,.][0-9]{2})(?:\s*[A-Z])?\s*$", re.IGNORECASE)
 DATE_DMY_RE = re.compile(r"(?<!\d)(\d{2})[.\-/](\d{2})[.\-/](\d{2}|\d{4})(?!\d)")
 DATE_YMD_RE = re.compile(r"(?<!\d)(\d{4})[.\-/](\d{2})[.\-/](\d{2})(?!\d)")
 QUANTITY_PREFIX_RE = re.compile(
     r"(?<![\d.,])(?P<quantity>\d{1,5}(?:[,.]\d{1,3})?)\s*(?:SZT\.?|X|\*)\s*",
     re.IGNORECASE,
 )
+PARAGON_FRAGMENT_RE = re.compile(r"PARA[GC][O0]N")
+FISCAL_FRAGMENT_RE = re.compile(r"F[I1]S[KX][A4]L")
+RECEIPT_HEADER_RE = re.compile(r"(?:PARA[GC][O0]N.*F[I1]S[KX][A4]L|F[I1]S[KX][A4]L.*PARA[GC][O0]N)")
 TOTAL_WORDS = ("SUMA", "RAZEM", "DO ZAPLATY", "NALEZNOSC", "SPRZEDAZ")
+PRIMARY_TOTAL_LABELS = ("SUMAPLN", "DOZAPLATYPLN")
 NON_ITEM_WORDS = TOTAL_WORDS + (
     "NIP",
     "PARAGON",
@@ -49,6 +54,11 @@ POSTAL_ADDRESS_RE = re.compile(r"^\d{2}-\d{3}\b")
 ADDRESS_PREFIX_RE = re.compile(r"^(?:UL(?:ICA)?|AL(?:EJA)?|PL(?:AC)?|OS(?:IEDLE)?)\.?\s")
 BRANCH_CODE_RE = re.compile(r"\s+[A-Z]{1,3}\d{1,5}$")
 LEGAL_ENTITY_MARKERS = ("SP. Z O.O", "SP Z O O", "SPOLKA", "S.A.", "S A")
+COMPANY_SUFFIX_RE = re.compile(
+    r"(?:\bSP\.?\s*Z\.?\s*O\.?\s*O\.?|\bSP[ÓO]ŁKA\s+Z\s+OGRANICZON[ĄA]\s+ODPOWIEDZIALNOŚCI[ĄA])(?=\s|$)",
+    re.IGNORECASE,
+)
+PROMOTIONAL_MARKERS = ("FACEBOOK", "WWW.", "HTTP", "DOLACZ DO NAS", "INSTAGRAM", "TIKTOK")
 
 
 @dataclass(frozen=True)
@@ -66,13 +76,15 @@ class ItemExtraction:
     items: list[ParsedItem]
     unmatched_price_rows: int
     unmatched_description_rows: int
+    fallback_used: bool
 
 
 def normalise_text(value: str) -> str:
     """Normalise OCR text for matching while keeping the original for display."""
     decomposed = unicodedata.normalize("NFKD", value)
     without_diacritics = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return " ".join(without_diacritics.upper().split())
+    transliterated = without_diacritics.translate(str.maketrans({"Ł": "L", "ł": "l"}))
+    return " ".join(transliterated.upper().split())
 
 
 def bbox_bounds(bbox: list[list[float]]) -> tuple[float, float, float, float] | None:
@@ -104,6 +116,46 @@ def position_lines(lines: list[OcrLine]) -> list[PositionedLine]:
     )
 
 
+def line_vertical_center(line: PositionedLine) -> float | None:
+    if line.y_min is None or line.y_max is None:
+        return None
+    return (line.y_min + line.y_max) / 2
+
+
+def positioned_group_bounds(lines: tuple[PositionedLine, ...]) -> tuple[float, float, float, float] | None:
+    bounds = [
+        (line.x_min, line.y_min, line.x_max, line.y_max)
+        for line in lines
+        if line.x_min is not None and line.y_min is not None and line.x_max is not None and line.y_max is not None
+    ]
+    if len(bounds) != len(lines):
+        return None
+    return (
+        min(bound[0] for bound in bounds),
+        min(bound[1] for bound in bounds),
+        max(bound[2] for bound in bounds),
+        max(bound[3] for bound in bounds),
+    )
+
+
+def are_nearby_label_fragments(first: PositionedLine, second: PositionedLine) -> bool:
+    first_bounds = positioned_group_bounds((first,))
+    second_bounds = positioned_group_bounds((second,))
+    if first_bounds is None or second_bounds is None:
+        return abs(first.index - second.index) <= 2
+
+    first_x_min, first_y_min, first_x_max, first_y_max = first_bounds
+    second_x_min, second_y_min, second_x_max, second_y_max = second_bounds
+    first_center = (first_y_min + first_y_max) / 2
+    second_center = (second_y_min + second_y_max) / 2
+    row_height = max(first_y_max - first_y_min, second_y_max - second_y_min)
+    if abs(first_center - second_center) > max(35.0, row_height * 1.5):
+        return False
+
+    horizontal_gap = max(first_x_min - second_x_max, second_x_min - first_x_max, 0.0)
+    return horizontal_gap <= max(120.0, row_height * 2.0)
+
+
 def merge_bboxes(lines: list[PositionedLine]) -> list[list[float]]:
     bounds = [
         (line.x_min, line.y_min, line.x_max, line.y_max)
@@ -126,6 +178,76 @@ def is_date_line(text: str) -> bool:
 def contains_total_label(text: str) -> bool:
     normalised = normalise_text(text)
     return any(word in normalised for word in TOTAL_WORDS)
+
+
+def is_primary_total_label(text: str) -> bool:
+    compact = re.sub(r"[^A-Z0-9]", "", normalise_text(text))
+    return any(label in compact for label in PRIMARY_TOTAL_LABELS)
+
+
+def is_receipt_header(text: str) -> bool:
+    compact = re.sub(r"[^A-Z0-9]", "", normalise_text(text))
+    return RECEIPT_HEADER_RE.search(compact) is not None
+
+
+def is_paragon_fragment(text: str) -> bool:
+    compact = re.sub(r"[^A-Z0-9]", "", normalise_text(text))
+    return PARAGON_FRAGMENT_RE.search(compact) is not None
+
+
+def is_fiscal_fragment(text: str) -> bool:
+    compact = re.sub(r"[^A-Z0-9]", "", normalise_text(text))
+    return FISCAL_FRAGMENT_RE.search(compact) is not None
+
+
+def receipt_header_fragments(ordered_lines: list[PositionedLine]) -> tuple[PositionedLine, ...] | None:
+    for line in ordered_lines:
+        if is_receipt_header(line.line.text):
+            return (line,)
+
+    for first_index, first in enumerate(ordered_lines):
+        for second in ordered_lines[first_index + 1 : first_index + 3]:
+            has_both_parts = (is_paragon_fragment(first.line.text) and is_fiscal_fragment(second.line.text)) or (
+                is_fiscal_fragment(first.line.text) and is_paragon_fragment(second.line.text)
+            )
+            if has_both_parts and are_nearby_label_fragments(first, second):
+                return first, second
+    return None
+
+
+def is_total_sum_fragment(text: str) -> bool:
+    normalised = normalise_text(text)
+    return "SUMA" in normalised and "PTU" not in normalised and "VAT" not in normalised
+
+
+def is_total_payment_fragment(text: str) -> bool:
+    compact = re.sub(r"[^A-Z0-9]", "", normalise_text(text))
+    return "DOZAPLATY" in compact
+
+
+def is_pln_fragment(text: str) -> bool:
+    compact = re.sub(r"[^A-Z0-9]", "", normalise_text(text))
+    return compact == "PLN"
+
+
+def primary_total_label_groups(ordered_lines: list[PositionedLine]) -> list[tuple[PositionedLine, ...]]:
+    groups: list[tuple[PositionedLine, ...]] = []
+    for line in ordered_lines:
+        if is_primary_total_label(line.line.text):
+            groups.append((line,))
+
+    for first_index, first in enumerate(ordered_lines):
+        for second in ordered_lines[first_index + 1 : first_index + 3]:
+            has_label_and_currency = (
+                (is_total_sum_fragment(first.line.text) or is_total_payment_fragment(first.line.text))
+                and is_pln_fragment(second.line.text)
+            ) or (
+                is_pln_fragment(first.line.text)
+                and (is_total_sum_fragment(second.line.text) or is_total_payment_fragment(second.line.text))
+            )
+            if has_label_and_currency and are_nearby_label_fragments(first, second):
+                groups.append((first, second))
+    return groups
 
 
 def amount_matches(text: str) -> list[re.Match[str]]:
@@ -164,10 +286,9 @@ def find_date(lines: list[OcrLine]) -> str | None:
 
 
 def merchant_header_lines(lines: list[OcrLine]) -> list[OcrLine]:
-    for index, line in enumerate(lines):
-        normalised = normalise_text(line.text)
-        if "PARAGON" in normalised and "FISKAL" in normalised:
-            return lines[:index]
+    fragments = receipt_header_fragments(position_lines(lines))
+    if fragments:
+        return lines[: min(fragment.index for fragment in fragments)]
     return lines[:12]
 
 
@@ -183,30 +304,115 @@ def clean_merchant_name(text: str) -> str:
     return " ".join(cleaned.split())[:160]
 
 
+def is_promotional_line(text: str) -> bool:
+    normalised = normalise_text(text)
+    return any(marker in normalised for marker in PROMOTIONAL_MARKERS)
+
+
+def name_before_company_suffix(text: str) -> str | None:
+    match = COMPANY_SUFFIX_RE.search(text)
+    if match is None:
+        return None
+    candidate = clean_merchant_name(text[: match.start()])
+    return candidate if sum(character.isalpha() for character in candidate) >= 2 else None
+
+
 def find_merchant(lines: list[OcrLine]) -> str | None:
-    candidates: list[tuple[float, float, str]] = []
+    candidates: list[tuple[int, float, float, str]] = []
+    company_candidates: list[tuple[int, float, float, str]] = []
     for index, line in enumerate(merchant_header_lines(lines)):
         text = line.text.strip()
         normalised = normalise_text(text)
+        if is_promotional_line(text) or is_address_line(text) or is_date_line(text):
+            continue
+        if any(word in normalised for word in ("NIP", "PARAGON", "FISKAL", "DATA", "KASA", "VAT", "PTU", "DOK")):
+            continue
+
+        position_score = max(0.0, 1.0 - index / 12)
+        company_name = name_before_company_suffix(text)
+        if company_name is not None:
+            company_candidates.append((index, line.confidence + position_score * 0.6 + 0.3, line.confidence, company_name))
+            continue
+
         cleaned = clean_merchant_name(text)
         letters = sum(character.isalpha() for character in cleaned)
         if len(cleaned) < 3 or letters < 2 or contains_total_label(text):
             continue
-        if is_address_line(text) or is_date_line(text):
-            continue
-        if any(word in normalised for word in ("NIP", "PARAGON", "FISKAL", "DATA", "KASA", "VAT", "PTU", "DOK")):
-            continue
-        position_score = max(0.0, 1.0 - index / 12)
         score = line.confidence + position_score * 0.6
         if POSTAL_CODE_RE.search(text):
             score -= 0.1
         if any(marker in normalised for marker in LEGAL_ENTITY_MARKERS):
             score -= 0.6
-        candidates.append((score, line.confidence, cleaned))
-    return max(candidates, key=lambda candidate: (candidate[0], candidate[1]))[2] if candidates else None
+        candidates.append((index, score, line.confidence, cleaned))
+
+    if company_candidates:
+        earliest_company_index = min(candidate[0] for candidate in company_candidates)
+        if not any(index < earliest_company_index for index, _, _, _ in candidates):
+            _, score, confidence, name = max(company_candidates, key=lambda candidate: (candidate[1], candidate[2]))
+            return name
+    return max(candidates, key=lambda candidate: (candidate[1], candidate[2]))[3] if candidates else None
+
+
+def find_primary_total(lines: list[OcrLine]) -> Decimal | None:
+    candidates: list[tuple[float, Decimal]] = []
+    ordered_lines = position_lines(lines)
+
+    for label_group in primary_total_label_groups(ordered_lines):
+        label_indices = {line.index for line in label_group}
+        group_bounds = positioned_group_bounds(label_group)
+        group_confidence = sum(line.line.confidence for line in label_group) / len(label_group)
+        label_positions = [index for index, line in enumerate(ordered_lines) if line.index in label_indices]
+        last_label_position = max(label_positions)
+
+        for label_line in label_group:
+            for match in amount_matches(label_line.line.text):
+                amount = parse_amount(match.group(1))
+                if amount is not None:
+                    candidates.append((5.0 + group_confidence * 0.2, amount))
+
+        for candidate_index, candidate_line in enumerate(ordered_lines):
+            if candidate_line.index in label_indices or is_date_line(candidate_line.line.text):
+                continue
+
+            amounts = [
+                amount
+                for match in amount_matches(candidate_line.line.text)
+                if (amount := parse_amount(match.group(1))) is not None
+            ]
+            if not amounts:
+                continue
+
+            candidate_bounds = positioned_group_bounds((candidate_line,))
+            if group_bounds is not None and candidate_bounds is not None:
+                _, label_y_min, label_x_max, label_y_max = group_bounds
+                candidate_x_min, candidate_y_min, _, candidate_y_max = candidate_bounds
+                if candidate_x_min < label_x_max:
+                    continue
+                label_height = label_y_max - label_y_min
+                candidate_height = candidate_y_max - candidate_y_min
+                max_vertical_distance = max(40.0, label_height * 1.75, candidate_height * 1.75)
+                label_center = (label_y_min + label_y_max) / 2
+                candidate_center = (candidate_y_min + candidate_y_max) / 2
+                vertical_distance = abs(candidate_center - label_center)
+                if vertical_distance > max_vertical_distance:
+                    continue
+                score = 4.0 - vertical_distance / max_vertical_distance + candidate_line.line.confidence * 0.2
+            elif 0 < candidate_index - last_label_position <= 2:
+                score = 3.0 - (candidate_index - last_label_position) * 0.2 + candidate_line.line.confidence * 0.2
+            else:
+                continue
+
+            for amount in amounts:
+                candidates.append((score, amount))
+
+    return max(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
 
 
 def find_total(lines: list[OcrLine]) -> Decimal | None:
+    primary_total = find_primary_total(lines)
+    if primary_total is not None:
+        return primary_total
+
     candidates: list[tuple[float, Decimal]] = []
     for index, line in enumerate(lines):
         if not contains_total_label(line.text):
@@ -239,22 +445,40 @@ def is_non_item_metadata(text: str) -> bool:
     return any(word in normalised for word in NON_ITEM_WORDS) or SPECIAL_METADATA_RE.fullmatch(compact) is not None
 
 
-def product_section(lines: list[OcrLine]) -> list[PositionedLine]:
-    ordered_lines = position_lines(lines)
-    start_index: int | None = None
-    for index, positioned in enumerate(ordered_lines):
-        normalised = normalise_text(positioned.line.text)
-        if "PARAGON" in normalised and "FISKAL" in normalised:
-            start_index = index + 1
-            break
-
-    if start_index is None:
-        return ordered_lines
-
+def section_until_summary(ordered_lines: list[PositionedLine], start_index: int) -> list[PositionedLine]:
     for index in range(start_index, len(ordered_lines)):
         if is_product_section_end(ordered_lines[index].line.text):
             return ordered_lines[start_index:index]
     return ordered_lines[start_index:]
+
+
+def fallback_product_section(ordered_lines: list[PositionedLine]) -> list[PositionedLine]:
+    price_row_indexes = [
+        index
+        for index, positioned in enumerate(ordered_lines)
+        if quantity_price_details(positioned.line.text) is not None
+    ]
+    if not price_row_indexes:
+        return []
+
+    first_price_row_index = price_row_indexes[0]
+    start_index = first_price_row_index
+    for index in range(first_price_row_index - 1, -1, -1):
+        if is_product_description(ordered_lines[index].line.text):
+            start_index = index
+            break
+    return section_until_summary(ordered_lines, start_index)
+
+
+def product_section(lines: list[OcrLine]) -> tuple[list[PositionedLine], bool]:
+    ordered_lines = position_lines(lines)
+    fragments = receipt_header_fragments(ordered_lines)
+    if fragments is None:
+        return fallback_product_section(ordered_lines), True
+
+    header_indexes = {fragment.index for fragment in fragments}
+    start_index = max(index for index, line in enumerate(ordered_lines) if line.index in header_indexes) + 1
+    return section_until_summary(ordered_lines, start_index), False
 
 
 def clean_product_name(value: str) -> str:
@@ -275,7 +499,7 @@ def is_product_description(text: str) -> bool:
     )
 
 
-def quantity_price_details(text: str) -> tuple[Decimal, Decimal, Decimal, int] | None:
+def quantity_price_details(text: str) -> tuple[Decimal, Decimal, Decimal, int, int] | None:
     quantity_match = QUANTITY_PREFIX_RE.search(text)
     if quantity_match is None:
         return None
@@ -286,7 +510,48 @@ def quantity_price_details(text: str) -> tuple[Decimal, Decimal, Decimal, int] |
     if quantity is None or not recognised_amounts:
         return None
 
-    return quantity, recognised_amounts[0], recognised_amounts[-1], quantity_match.start()
+    return quantity, recognised_amounts[0], recognised_amounts[-1], quantity_match.start(), len(recognised_amounts)
+
+
+def standalone_amount(text: str) -> Decimal | None:
+    match = STANDALONE_AMOUNT_RE.fullmatch(text)
+    return parse_amount(match.group(1)) if match else None
+
+
+def calculated_total_line(
+    price_row: PositionedLine,
+    quantity: Decimal,
+    unit_price: Decimal,
+    candidates: list[PositionedLine],
+    used_line_numbers: set[int],
+) -> PositionedLine | None:
+    expected_total = quantity * unit_price
+    nearby: list[tuple[float, PositionedLine]] = []
+    price_row_center = line_vertical_center(price_row)
+
+    for candidate in candidates:
+        if candidate.index in used_line_numbers:
+            continue
+        amount = standalone_amount(candidate.line.text)
+        if amount is None or abs(amount - expected_total) > Decimal("0.01"):
+            continue
+
+        candidate_center = line_vertical_center(candidate)
+        if price_row_center is not None and candidate_center is not None:
+            if candidate.x_min is not None and price_row.x_min is not None and candidate.x_min < price_row.x_min:
+                continue
+            if price_row.y_min is not None and price_row.y_max is not None and candidate.y_min is not None and candidate.y_max is not None:
+                row_height = max(price_row.y_max - price_row.y_min, candidate.y_max - candidate.y_min)
+                vertical_distance = abs(candidate_center - price_row_center)
+                if vertical_distance > max(100.0, row_height * 2.5):
+                    continue
+            else:
+                vertical_distance = abs(candidate_center - price_row_center)
+            nearby.append((vertical_distance, candidate))
+        elif abs(candidate.index - price_row.index) <= 2:
+            nearby.append((abs(candidate.index - price_row.index), candidate))
+
+    return min(nearby, key=lambda candidate: candidate[0])[1] if nearby else None
 
 
 def build_item(
@@ -315,7 +580,7 @@ def build_item(
 def item_from_single_line(line: PositionedLine) -> ParsedItem | None:
     details = quantity_price_details(line.line.text)
     if details is not None:
-        quantity, unit_price, total_price, quantity_start = details
+        quantity, unit_price, total_price, quantity_start, _ = details
         return build_item(line.line.text[:quantity_start], [line], total_price, quantity, unit_price)
 
     matches = amount_matches(line.line.text)
@@ -331,8 +596,10 @@ def find_items(lines: list[OcrLine]) -> ItemExtraction:
     items: list[ParsedItem] = []
     descriptions: list[PositionedLine] = []
     price_rows: list[PositionedLine] = []
+    standalone_totals: list[PositionedLine] = []
+    section_lines, fallback_used = product_section(lines)
 
-    for line in product_section(lines):
+    for line in section_lines:
         if is_date_line(line.line.text) or is_non_item_metadata(line.line.text):
             continue
 
@@ -343,16 +610,27 @@ def find_items(lines: list[OcrLine]) -> ItemExtraction:
         if quantity_price_details(line.line.text) is not None:
             price_rows.append(line)
             continue
+        if standalone_amount(line.line.text) is not None:
+            standalone_totals.append(line)
+            continue
         if is_product_description(line.line.text):
             descriptions.append(line)
 
     pair_count = min(len(descriptions), len(price_rows))
+    used_total_line_numbers: set[int] = set()
     for description, price_row in zip(descriptions[:pair_count], price_rows[:pair_count]):
         details = quantity_price_details(price_row.line.text)
         if details is None:
             continue
-        quantity, unit_price, total_price, _ = details
-        item = build_item(description.line.text, [description, price_row], total_price, quantity, unit_price)
+        quantity, unit_price, total_price, _, amount_count = details
+        source_lines = [description, price_row]
+        if amount_count == 1:
+            total_line = calculated_total_line(price_row, quantity, unit_price, standalone_totals, used_total_line_numbers)
+            if total_line is not None:
+                total_price = standalone_amount(total_line.line.text) or total_price
+                source_lines.append(total_line)
+                used_total_line_numbers.add(total_line.index)
+        item = build_item(description.line.text, source_lines, total_price, quantity, unit_price)
         if item is not None:
             items.append(item)
 
@@ -360,6 +638,7 @@ def find_items(lines: list[OcrLine]) -> ItemExtraction:
         items=sorted(items, key=lambda item: item.line_number),
         unmatched_price_rows=len(price_rows) - pair_count,
         unmatched_description_rows=len(descriptions) - pair_count,
+        fallback_used=fallback_used,
     )
 
 
@@ -379,6 +658,8 @@ def parse_receipt(lines: list[OcrLine]) -> ParsedReceipt:
         validation_errors.append("Nie rozpoznano sumy paragonu.")
     if not items:
         validation_errors.append("Nie rozpoznano pozycji paragonu.")
+    if item_extraction.fallback_used:
+        validation_errors.append("Nie rozpoznano nagłówka PARAGON FISKALNY; zastosowano tryb awaryjny, sprawdź pozycje.")
     if item_extraction.unmatched_price_rows:
         validation_errors.append("Nie udało się powiązać części wierszy cen z nazwami produktów.")
     if item_extraction.unmatched_description_rows:

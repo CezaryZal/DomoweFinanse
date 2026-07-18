@@ -28,6 +28,7 @@ class ReceiptParserTests(TestCase):
     def test_marks_inconsistent_sum_for_manual_review(self) -> None:
         lines = [
             OcrLine("SKLEP TEST", 0.99),
+            OcrLine("PARAGON FISKALNY", 0.98),
             OcrLine("PRODUKT 4,00", 0.90),
             OcrLine("SUMA 10,00", 0.95),
             OcrLine("12-07-2026", 0.95),
@@ -42,6 +43,7 @@ class ReceiptParserTests(TestCase):
             OcrLine("0,122 39,", 0.99),
             OcrLine("MARKET ABC", 0.88),
             OcrLine("DATA 12.07.2026", 0.99),
+            OcrLine("PARAGON FISKALNY", 0.98),
             OcrLine("MLEKO UHT 4,99", 0.95),
             OcrLine("RAZEM", 0.96),
             OcrLine("4,99", 0.96),
@@ -60,6 +62,7 @@ class ReceiptParserTests(TestCase):
             OcrLine("SKLEP ABC", 0.98),
             OcrLine("NIP 1234567890", 0.98),
             OcrLine("PTU A 23% 2,00", 0.95),
+            OcrLine("PARAGON FISKALNY", 0.99),
             OcrLine("CHLEB 3,50", 0.96),
             OcrLine("SUMA 3,50", 0.99),
             OcrLine("12-07-2026", 0.98),
@@ -124,3 +127,125 @@ class ReceiptParserTests(TestCase):
         self.assertEqual([item.total_price for item in parsed.items], [Decimal("7.49"), Decimal("19.99"), Decimal("8.99")])
         self.assertEqual(parsed.total_amount, Decimal("36.47"))
         self.assertFalse(any("różni się" in error for error in parsed.validation_errors))
+
+    def test_uses_nearby_total_for_multiple_quantity_product(self) -> None:
+        lines = [
+            OcrLine("SKLEP TEST", 0.99),
+            OcrLine("09.06.2026", 0.98),
+            OcrLine("PARAGON FISKALNY", 0.99, [[10, 80], [300, 80], [300, 100], [10, 100]]),
+            OcrLine("LIFTINGUJĄCE PŁATKI POD OCZY", 0.95, [[10, 110], [420, 110], [420, 135], [10, 135]]),
+            OcrLine("2*6.00", 0.98, [[10, 145], [120, 145], [120, 170], [10, 170]]),
+            OcrLine("12.00A", 0.98, [[430, 145], [520, 145], [520, 170], [430, 170]]),
+            OcrLine("SUMA PLN", 0.99, [[10, 190], [180, 190], [180, 220], [10, 220]]),
+            OcrLine("12.00", 0.99, [[430, 195], [520, 195], [520, 225], [430, 225]]),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual(len(parsed.items), 1)
+        item = parsed.items[0]
+        self.assertEqual(item.quantity, Decimal("2"))
+        self.assertEqual(item.unit_price, Decimal("6.00"))
+        self.assertEqual(item.total_price, Decimal("12.00"))
+        self.assertEqual(parsed.total_amount, Decimal("12.00"))
+        self.assertEqual(parsed.validation_errors, [])
+
+    def test_uses_name_before_company_suffix_and_skips_promotions(self) -> None:
+        lines = [
+            OcrLine("Dołącz do nas na Facebooku", 0.99),
+            OcrLine("www.facebook.com/inglotpolska", 0.99),
+            OcrLine("INGLOT Sp. z o.o.", 0.96),
+            OcrLine("Galeria Warmińska", 0.94),
+            OcrLine("Tuwima 26", 0.94),
+            OcrLine("10-748 Olsztyn", 0.94),
+            OcrLine("NIP: 7952194802", 0.98),
+            OcrLine("PARAGON FISKALNY", 0.99),
+            OcrLine("PRODUKT 77,00", 0.98),
+            OcrLine("SUMA PLN 77,00", 0.99),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual(parsed.merchant, "INGLOT")
+
+    def test_prefers_sum_pln_in_the_right_column_over_tax_total(self) -> None:
+        lines = [
+            OcrLine("ROSSMANN SDP", 0.98),
+            OcrLine("PARACON FISKALNY", 0.98, [[10, 80], [300, 80], [300, 105], [10, 105]]),
+            OcrLine("BEBIO COSMETICS", 0.96, [[10, 115], [360, 115], [360, 140], [10, 140]]),
+            OcrLine("1 x17,99 17,99A", 0.98, [[420, 115], [590, 115], [590, 140], [420, 140]]),
+            OcrLine("SUMA PTU", 0.99, [[10, 190], [180, 190], [180, 220], [10, 220]]),
+            OcrLine("26,72", 0.99, [[430, 195], [520, 195], [520, 225], [430, 225]]),
+            OcrLine("SUMA PLN", 0.99, [[10, 240], [180, 240], [180, 270], [10, 270]]),
+            OcrLine("142,91", 0.99, [[430, 245], [540, 245], [540, 275], [430, 275]]),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual(parsed.total_amount, Decimal("142.91"))
+        self.assertEqual([item.name for item in parsed.items], ["BEBIO COSMETICS"])
+
+    def test_finds_do_zaplaty_pln_in_the_right_column(self) -> None:
+        lines = [
+            OcrLine("SKLEP TEST", 0.99),
+            OcrLine("PARAGON FISKALNY", 0.99, [[10, 80], [300, 80], [300, 105], [10, 105]]),
+            OcrLine("DO ZAPŁATY PLN", 0.99, [[10, 140], [250, 140], [250, 170], [10, 170]]),
+            OcrLine("77,00", 0.99, [[430, 145], [520, 145], [520, 175], [430, 175]]),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual(parsed.total_amount, Decimal("77.00"))
+
+    def test_uses_safe_fallback_without_receipt_header(self) -> None:
+        lines = [
+            OcrLine("SKLEP ABC", 0.99),
+            OcrLine("UL. TESTOWA 1", 0.98),
+            OcrLine("PRODUKT TEST", 0.97),
+            OcrLine("1 x17,99 17,99A", 0.98),
+            OcrLine("SUMA PLN 17,99", 0.99),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual([item.name for item in parsed.items], ["PRODUKT TEST"])
+        self.assertTrue(any("tryb awaryjny" in error for error in parsed.validation_errors))
+
+    def test_does_not_use_metadata_as_fallback_product_without_price_row(self) -> None:
+        lines = [
+            OcrLine("SKLEP ABC", 0.99),
+            OcrLine("UL. TESTOWA 1", 0.98),
+            OcrLine("PRODUKT 17,99", 0.97),
+            OcrLine("SUMA PLN 17,99", 0.99),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual(parsed.items, [])
+        self.assertTrue(any("Nie rozpoznano pozycji" in error for error in parsed.validation_errors))
+
+    def test_joins_split_rossmann_header_and_total_labels(self) -> None:
+        lines = [
+            OcrLine("Rossmann SDP SP. Z O.O. Sklep nr 199", 0.94, [[326, 282], [1184, 288], [1184, 364], [326, 357]]),
+            OcrLine("FISKALNY", 0.99, [[707, 554], [1135, 583], [1131, 645], [703, 617]]),
+            OcrLine("PARAGON", 0.99, [[363, 576], [709, 557], [713, 620], [366, 639]]),
+            OcrLine("BEBIO COSMETICS P\\AX", 0.97, [[78, 635], [569, 623], [570, 688], [80, 700]]),
+            OcrLine("1 x17,99 17,99A", 0.94, [[1058, 641], [1412, 641], [1412, 700], [1058, 700]]),
+            OcrLine("NEBOA MEN SEBUM CAX", 0.96, [[78, 745], [567, 730], [569, 796], [80, 811]]),
+            OcrLine("1 x15,99 15,99A", 0.93, [[1055, 745], [1411, 747], [1411, 807], [1055, 805]]),
+            OcrLine("SPRZEDAZ OPODATKOWANA A", 0.98, [[70, 1269], [631, 1257], [633, 1326], [72, 1338]]),
+            OcrLine("142,91", 0.92, [[1259, 1269], [1410, 1272], [1409, 1338], [1258, 1335]]),
+            OcrLine("PTU A 23%", 0.99, [[68, 1330], [300, 1323], [302, 1386], [70, 1394]]),
+            OcrLine("26,72", 0.90, [[1278, 1328], [1413, 1331], [1411, 1395], [1277, 1393]]),
+            OcrLine("SUMA PTU", 0.99, [[68, 1387], [276, 1379], [279, 1448], [70, 1455]]),
+            OcrLine("26,72", 0.90, [[1280, 1384], [1414, 1389], [1412, 1456], [1278, 1452]]),
+            OcrLine("SUMA", 0.999, [[65, 1445], [278, 1445], [278, 1564], [65, 1564]]),
+            OcrLine("PLN", 0.999, [[293, 1445], [465, 1437], [470, 1554], [298, 1561]]),
+            OcrLine("142,91", 0.98, [[1116, 1439], [1417, 1444], [1415, 1574], [1114, 1569]]),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual([item.name for item in parsed.items], ["BEBIO COSMETICS P\\AX", "NEBOA MEN SEBUM CAX"])
+        self.assertEqual(parsed.total_amount, Decimal("142.91"))
+        self.assertFalse(any("tryb awaryjny" in error for error in parsed.validation_errors))

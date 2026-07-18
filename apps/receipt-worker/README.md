@@ -83,6 +83,12 @@ Parser analizuje wyłącznie sekcję między nagłówkiem `PARAGON FISKALNY` a c
 - opis produktu, a poniżej ilość i ceny, np. `BALSAM ...` + `1 SZT * 25,82 = 25,82`;
 - opis w lewej kolumnie, a ilość i ceny w prawej kolumnie tego samego obszaru paragonu.
 
+Gdy wiersz ilości zawiera tylko cenę jednostkową, np. `2 × 6,00`, parser szuka samodzielnej kwoty po prawej stronie i przyjmuje ją jako cenę końcową tylko po potwierdzeniu obliczenia `2 × 6,00 = 12,00`.
+
+Na początku parser szuka końcowej sumy oznaczonej `SUMA PLN` albo `DO ZAPŁATY PLN`. Etykieta może być odczytana jako jedno pole albo jako bliskie pola, np. osobno `SUMA` i `PLN`; kwota musi znajdować się w tym samym wierszu lub po jego prawej stronie. Wpisy `SUMA PTU` i `VAT` nie są traktowane jako suma paragonu.
+
+`PARAGON FISKALNY` jest silnym sygnałem początku sekcji produktów i może być rozpoznany jako jedno albo dwa sąsiadujące pola OCR. Gdy go brakuje, worker używa bezpiecznego trybu awaryjnego: rozpoczyna analizę przy pierwszym wiarygodnym wierszu ilość × cena i oznacza wynik do ręcznej weryfikacji. Nie dobiera wtedy danych sklepu ani adresu z górnej części dokumentu jako produktów.
+
 Jeśli są dostępne, worker zapisuje również ilość i cenę jednostkową. Nie poprawia jednak samodzielnie literówek pochodzących z OCR — niepewny odczyt nazwy nadal wymaga ręcznej weryfikacji.
 
 Nazwa sprzedawcy jest wybierana z nagłówka przed `PARAGON FISKALNY`. Adres, NIP i dane prawne firmy są odrzucane; numer placówki oraz kod pocztowy na końcu pierwszej linii są usuwane z wyświetlanej nazwy, np. `HEBE R199, 10-748 OLSZTYN` → `HEBE`.
