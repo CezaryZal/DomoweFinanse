@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 
 from .models import OcrLine, ParsedItem, ParsedReceipt
 
-PARSER_VERSION = "paddleocr-rules-0.3.7"
+PARSER_VERSION = "paddleocr-rules-0.3.8"
 AMOUNT_RE = re.compile(r"(?<![\d.,])([0-9]{1,7}[,.][0-9]{2})(?![\d.,])")
 STANDALONE_AMOUNT_RE = re.compile(r"^\s*([0-9]{1,7}[,.][0-9]{2})(?:\s*[A-Z])?\s*$", re.IGNORECASE)
 DATE_DMY_RE = re.compile(r"(?<!\d)(\d{2})[.\-/](\d{2})[.\-/](\d{2}|\d{4})(?!\d)")
@@ -17,6 +17,7 @@ QUANTITY_PREFIX_RE = re.compile(
     r"(?<![\d.,])(?P<quantity>\d{1,5}(?:[,.]\d{1,3})?)\s*(?:SZT\.?|X|×|\*)\s*",
     re.IGNORECASE,
 )
+IMPLICIT_SINGLE_QUANTITY_RE = re.compile(r"^\s*(?:X|\u00d7|\*)\s*", re.IGNORECASE)
 PARAGON_FRAGMENT_RE = re.compile(r"PARA[GC][O0]N")
 FISCAL_FRAGMENT_RE = re.compile(r"F[I1]S[KX][A4]L")
 RECEIPT_HEADER_RE = re.compile(r"(?:PARA[GC][O0]N.*F[I1]S[KX][A4]L|F[I1]S[KX][A4]L.*PARA[GC][O0]N)")
@@ -518,15 +519,23 @@ def is_product_description(text: str) -> bool:
 def quantity_price_details(text: str) -> tuple[Decimal, Decimal, Decimal, int, int] | None:
     quantity_match = QUANTITY_PREFIX_RE.search(text)
     if quantity_match is None:
-        return None
+        implicit_quantity_match = IMPLICIT_SINGLE_QUANTITY_RE.search(text)
+        if implicit_quantity_match is None:
+            return None
+        quantity = Decimal("1")
+        price_start = implicit_quantity_match.end()
+        quantity_start = implicit_quantity_match.start()
+    else:
+        quantity = parse_amount(quantity_match.group("quantity"))
+        price_start = quantity_match.end()
+        quantity_start = quantity_match.start()
 
-    quantity = parse_amount(quantity_match.group("quantity"))
-    amounts = [parse_amount(match.group(1)) for match in amount_matches(text[quantity_match.end() :])]
+    amounts = [parse_amount(match.group(1)) for match in amount_matches(text[price_start:])]
     recognised_amounts = [amount for amount in amounts if amount is not None]
     if quantity is None or not recognised_amounts:
         return None
 
-    return quantity, recognised_amounts[0], recognised_amounts[-1], quantity_match.start(), len(recognised_amounts)
+    return quantity, recognised_amounts[0], recognised_amounts[-1], quantity_start, len(recognised_amounts)
 
 
 def standalone_amount(text: str) -> Decimal | None:

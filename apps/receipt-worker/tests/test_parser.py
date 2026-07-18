@@ -171,6 +171,25 @@ class ReceiptParserTests(TestCase):
         self.assertEqual(parsed.total_amount, Decimal("25.98"))
         self.assertEqual(parsed.validation_errors, [])
 
+    def test_assumes_one_item_when_ocr_omits_quantity_before_multiplication(self) -> None:
+        lines = [
+            OcrLine("SKLEP TEST", 0.99),
+            OcrLine("PARAGON FISKALNY", 0.99, [[10, 80], [300, 80], [300, 100], [10, 100]]),
+            OcrLine("MLEKO UHT", 0.95, [[10, 110], [300, 110], [300, 135], [10, 135]]),
+            OcrLine("\u00d76,98 6,98A", 0.98, [[420, 115], [590, 115], [590, 140], [420, 140]]),
+            OcrLine("SUMA PLN 6,98", 0.99, [[10, 190], [300, 190], [300, 220], [10, 220]]),
+        ]
+
+        parsed = parse_receipt(lines)
+
+        self.assertEqual(len(parsed.items), 1)
+        item = parsed.items[0]
+        self.assertEqual(item.name, "MLEKO UHT")
+        self.assertEqual(item.quantity, Decimal("1"))
+        self.assertEqual(item.unit_price, Decimal("6.98"))
+        self.assertEqual(item.total_price, Decimal("6.98"))
+        self.assertEqual(parsed.total_amount, Decimal("6.98"))
+
     def test_spatial_alignment_skips_unpriced_description_without_shifting_later_items(self) -> None:
         lines = [
             OcrLine("SKLEP TEST", 0.99),

@@ -13,6 +13,10 @@ from paddlex.inference import load_pipeline_config
 from .models import OcrLine
 
 MAX_DESKEW_ANGLE = 15.0
+TEXT_CROP_MIN_CONFIDENCE = 0.65
+TEXT_CROP_PADDING = 50
+TEXT_CROP_SCALE = 2.0
+MAX_TEXT_CROP_SIDE = 5000
 
 
 def _deskew_angle(raw_angle: float) -> float | None:
@@ -43,6 +47,45 @@ def _write_image(path: Path, image: np.ndarray) -> Path:
     if not cv2.imwrite(str(path), image):
         raise RuntimeError("Nie udało się zapisać obrazu po przygotowaniu.")
     return path
+
+
+def crop_to_text_content(
+    source: Path,
+    lines: list[OcrLine],
+    target: Path,
+    *,
+    padding: int = TEXT_CROP_PADDING,
+    scale: float = TEXT_CROP_SCALE,
+) -> Path | None:
+    """Crop a photo to OCR text bounds and enlarge it for a second OCR pass."""
+    image = cv2.imread(str(source), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError("Nie mo\u017cna odczyta\u0107 przes\u0142anego obrazu.")
+
+    points = [
+        point
+        for line in lines
+        if line.confidence >= TEXT_CROP_MIN_CONFIDENCE
+        for point in line.bbox
+        if len(point) >= 2
+    ]
+    if not points:
+        return None
+
+    height, width = image.shape[:2]
+    left = max(0, int(min(point[0] for point in points)) - padding)
+    top = max(0, int(min(point[1] for point in points)) - padding)
+    right = min(width, int(max(point[0] for point in points)) + padding)
+    bottom = min(height, int(max(point[1] for point in points)) + padding)
+    if right <= left or bottom <= top:
+        return None
+
+    cropped = image[top:bottom, left:right]
+    crop_height, crop_width = cropped.shape[:2]
+    effective_scale = min(scale, MAX_TEXT_CROP_SIDE / max(crop_height, crop_width))
+    if effective_scale > 1.0:
+        cropped = cv2.resize(cropped, None, fx=effective_scale, fy=effective_scale, interpolation=cv2.INTER_CUBIC)
+    return _write_image(target, cropped)
 
 
 def preprocess_images(source: Path, target_directory: Path) -> list[Path]:
@@ -108,7 +151,7 @@ def _normalise_bbox(value: Any) -> list[list[float]]:
 
 
 class ReceiptOcrEngine:
-    def __init__(self) -> None:
+    def __init__(self, *, use_document_recovery: bool = True) -> None:
         pipeline_config = load_pipeline_config("OCR")
         pipeline_config["SubModules"]["TextDetection"]["max_side_limit"] = 5000
         self._engine = PaddleOCR(
@@ -116,8 +159,8 @@ class ReceiptOcrEngine:
             text_recognition_model_name="latin_PP-OCRv5_mobile_rec",
             paddlex_config=pipeline_config,
             enable_mkldnn=False,
-            use_doc_orientation_classify=True,
-            use_doc_unwarping=True,
+            use_doc_orientation_classify=use_document_recovery,
+            use_doc_unwarping=use_document_recovery,
             use_textline_orientation=True,
         )
 

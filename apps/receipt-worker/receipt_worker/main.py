@@ -7,11 +7,17 @@ import time
 from pathlib import Path
 
 from .config import Settings
-from .ocr_engine import ReceiptOcrEngine, preprocess_images
+from .models import ParsedReceipt
+from .ocr_engine import ReceiptOcrEngine, crop_to_text_content, preprocess_images
 from .parser import parse_receipt, select_best_parse
 from .repository import ReceiptRepository
 
 LOGGER = logging.getLogger("receipt-worker")
+
+
+def needs_flat_ocr_fallback(parsed: ParsedReceipt) -> bool:
+    """Retry without document recovery when a narrow receipt was misread."""
+    return parsed.total_amount is None or not parsed.items
 
 
 class ReceiptWorker:
@@ -24,6 +30,12 @@ class ReceiptWorker:
             settings.max_attempts,
         )
         self.ocr = ReceiptOcrEngine()
+        self.flat_ocr: ReceiptOcrEngine | None = None
+
+    def flat_ocr_engine(self) -> ReceiptOcrEngine:
+        if self.flat_ocr is None:
+            self.flat_ocr = ReceiptOcrEngine(use_document_recovery=False)
+        return self.flat_ocr
 
     def process_once(self) -> bool:
         job = self.repository.claim_next_job()
@@ -50,6 +62,28 @@ class ReceiptWorker:
 
                 if not candidates:
                     raise RuntimeError("PaddleOCR nie zwrócił żadnego tekstu z dostępnych wariantów obrazu.")
+                best_candidate = select_best_parse(candidates)
+                if needs_flat_ocr_fallback(best_candidate):
+                    try:
+                        fallback_lines = self.flat_ocr_engine().recognise(source)
+                    except Exception:
+                        LOGGER.exception("Fallback OCR failed for receipt %s", receipt["id"])
+                    else:
+                        if fallback_lines:
+                            candidates.append(parse_receipt(fallback_lines))
+                            cropped_source = crop_to_text_content(
+                                source,
+                                fallback_lines,
+                                directory / "prepared-flat-crop.png",
+                            )
+                            if cropped_source is not None:
+                                try:
+                                    cropped_lines = self.flat_ocr_engine().recognise(cropped_source)
+                                except Exception:
+                                    LOGGER.exception("Cropped fallback OCR failed for receipt %s", receipt["id"])
+                                else:
+                                    if cropped_lines:
+                                        candidates.append(parse_receipt(cropped_lines))
                 self.repository.complete_job(job, select_best_parse(candidates))
             LOGGER.info("Paragon %s oczekuje na weryfikację użytkownika", receipt["id"])
         except Exception as error:  # Worker must record failures before continuing.
