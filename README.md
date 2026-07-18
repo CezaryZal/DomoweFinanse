@@ -21,6 +21,17 @@ Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 
 Wydatki, kategorie i metadane paragonów są przechowywane w Supabase Postgres. Zdjęcia trafiają do prywatnego bucketu Supabase Storage, a ciężkie przetwarzanie obrazu wykonuje lokalny worker Python.
 
+## Design i makiety
+
+Źródłem prawdy dla makiet jest katalog [`design/`](design/README.md) w tym repozytorium. Zawiera on edytowalne źródło widoków oraz eksporty PNG wszystkich głównych ekranów aplikacji.
+
+Canva służy jako edytowalna kopia robocza i miejsce do przeglądu:
+
+- [edytuj projekt „Domowe Finanse” w Canvie](https://www.canva.com/d/vKeX4uOCwN5WDqL);
+- [otwórz podgląd projektu w Canvie](https://www.canva.com/d/GmU4mZTAWSAr8Ub).
+
+Zmiana wykonana wyłącznie w Canvie nie jest wersją źródłową, dopóki nie zostanie przeniesiona do plików w `design/`.
+
 ## Uruchomienie lokalne
 
 ### Wymagania
