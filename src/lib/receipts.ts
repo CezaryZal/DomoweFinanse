@@ -7,6 +7,7 @@ export const RECEIPT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as c
 
 type ReceiptItemRow = {
   id: string
+  category_id: string | null
   line_number: number
   name: string
   quantity: number | string | null
@@ -47,6 +48,7 @@ function toNumber(value: number | string | null): number | null {
 function mapItem(row: ReceiptItemRow): ReceiptItem {
   return {
     id: row.id,
+    categoryId: row.category_id,
     lineNumber: row.line_number,
     name: row.name,
     quantity: toNumber(row.quantity),
@@ -110,7 +112,7 @@ export async function listReceipts(userId: string): Promise<Receipt[]> {
     .select(`
       id, expense_id, category_id, status, storage_path, original_filename, merchant, purchased_at,
       total_amount, currency, confidence, validation_errors, parser_version, created_at,
-      receipt_items (id, line_number, name, quantity, unit_price, total_price, confidence, source_text),
+      receipt_items (id, category_id, line_number, name, quantity, unit_price, total_price, confidence, source_text),
       receipt_processing_jobs (status, error_message)
     `)
     .eq('user_id', userId)
@@ -174,6 +176,7 @@ export async function updateReceiptReview(receiptId: string, review: ReceiptRevi
     p_category_id: review.categoryId,
     p_items: review.items.map((item) => ({
       name: item.name.trim(),
+      categoryId: item.categoryId,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,

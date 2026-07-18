@@ -1,0 +1,25 @@
+:root { background: #f7f9fc; }
+body { background: #f7f9fc; }
+.app-shell { background: #f7f9fc; }
+.sidebar { background: #fff; width: 220px; padding: 24px 16px; }
+.brand { font-size: 15px; padding: 0 8px 34px; }
+.brand-mark { background: #3398ee; height: 38px; width: 38px; }
+.sidebar nav { gap: 8px; }
+.nav-item { border-radius: 9px; padding: 12px; }
+.nav-item.active { background: #3398ee; }
+.main-content { max-width: none; }
+.topbar { background: #fff; border-bottom: 1px solid #e8edf2; padding: 18px 34px; }
+.page { padding: 28px 34px 48px; }
+.page-title { margin: 0 0 22px; }
+.button.primary { background: #3398ee; box-shadow: 0 3px 8px #3398ee2e; }
+.button.primary:hover { background: #2487db; }
+.summary-card { background: #fff; border: 1px solid #edf1f4; box-shadow: 0 2px 8px #17202a05; min-height: 156px; padding: 17px; }
+.chart-card, .category-chart { background: #fff; border: 1px solid #edf1f4; border-radius: 14px; padding: 18px; }
+.feature-banner { background: #fff; border: 1px solid #edf1f4; }
+.panel { background: #fff; border-color: #e4e9ef; }
+.expense-list { border-top-color: #edf1f4; }
+.expense-row { min-height: 66px; }
+.category-card { background: #fff; border-color: #e3e8ee; border-radius: 14px; min-height: 180px; padding: 18px; }
+.category-edit { color: #258fe8; justify-self: end; }
+.modal { border-radius: 14px; }
+@media (max-width: 760px) { .sidebar { width: 65px; }.topbar, .page { padding-left: 16px; padding-right: 16px; } }

@@ -27,6 +27,7 @@ export type ReceiptStatus = 'uploading' | 'queued' | 'processing' | 'needs_revie
 
 export type ReceiptItem = {
   id: string
+  categoryId: string | null
   lineNumber: number
   name: string
   quantity: number | null
@@ -38,6 +39,7 @@ export type ReceiptItem = {
 
 export type ReceiptItemDraft = {
   name: string
+  categoryId: string | null
   quantity: number | null
   unitPrice: number | null
   totalPrice: number
