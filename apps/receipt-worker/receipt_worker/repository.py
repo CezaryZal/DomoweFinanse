@@ -89,6 +89,8 @@ class ReceiptRepository:
                     "user_id": user_id,
                     "line_number": item.line_number,
                     "name": item.name,
+                    "quantity": decimal_value(item.quantity),
+                    "unit_price": decimal_value(item.unit_price),
                     "total_price": decimal_value(item.total_price),
                     "confidence": item.confidence,
                     "source_text": item.source_text,

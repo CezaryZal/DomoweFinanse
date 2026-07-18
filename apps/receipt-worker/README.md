@@ -76,9 +76,20 @@ Dla każdego paragonu worker sprawdza oryginalny obraz oraz warianty:
 
 Przed przygotowaniem wariantów obraz jest prostowany, a mniejsze obrazy są powiększane. Parser porównuje wyniki i preferuje wariant, który rozpoznaje sklep, datę, sumę i pozycje oraz zachowuje zgodność sum.
 
+## Rozpoznawanie pozycji produktów
+
+Parser analizuje wyłącznie sekcję między nagłówkiem `PARAGON FISKALNY` a częścią podatkową lub podsumowaniem. Wykorzystuje współrzędne OCR (`bbox`) oraz kolejność wierszy, aby obsłużyć dwa częste układy:
+
+- opis produktu, a poniżej ilość i ceny, np. `BALSAM ...` + `1 SZT * 25,82 = 25,82`;
+- opis w lewej kolumnie, a ilość i ceny w prawej kolumnie tego samego obszaru paragonu.
+
+Jeśli są dostępne, worker zapisuje również ilość i cenę jednostkową. Nie poprawia jednak samodzielnie literówek pochodzących z OCR — niepewny odczyt nazwy nadal wymaga ręcznej weryfikacji.
+
+Nazwa sprzedawcy jest wybierana z nagłówka przed `PARAGON FISKALNY`. Adres, NIP i dane prawne firmy są odrzucane; numer placówki oraz kod pocztowy na końcu pierwszej linii są usuwane z wyświetlanej nazwy, np. `HEBE R199, 10-748 OLSZTYN` → `HEBE`.
+
 ## Ograniczenia obecnej wersji
 
-- parser rozpoznaje podstawowy sklep, datę, sumę także z sąsiedniej linii oraz wiersze zakończone ceną;
+- parser rozpoznaje podstawowy sklep, datę, sumę także z sąsiedniej linii oraz typowe układy pozycji produktowych;
 - data, NIP, VAT, informacje o płatności i nagłówki nie powinny być zapisywane jako pozycje;
 - ilości, rabaty i złożone układy będą rozwijane na podstawie benchmarku prawdziwych paragonów;
 - Qwen nie jest jeszcze używany;

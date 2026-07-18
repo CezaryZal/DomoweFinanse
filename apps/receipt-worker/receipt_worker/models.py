@@ -19,6 +19,8 @@ class OcrLine:
 class ParsedItem:
     line_number: int
     name: str
+    quantity: Decimal | None
+    unit_price: Decimal | None
     total_price: Decimal
     confidence: float
     source_text: str
