@@ -21,6 +21,13 @@
 | Kategorie — lista | [`mockups/07-kategorie-lista.png`](mockups/07-kategorie-lista.png) |
 | Kategorie — edycja | [`mockups/08-kategorie-edycja.png`](mockups/08-kategorie-edycja.png) |
 
+Widok **Wydatki — lista** rozróżnia obecnie dwa typy zapisów:
+
+- wydatek ręczny — pojedyncza transakcja przypisana do jednej kategorii;
+- paragon — jedna transakcja sklepu, którą można rozwinąć do podsumowań kategorii wyliczonych z produktów.
+
+Paragon nie jest rozbijany na niezależne wydatki. Dzięki temu jego kwota całkowita pozostaje jednym zapisem, a rozwinięcie pokazuje kontrolowany podział bez ryzyka podwójnego zliczania.
+
 ## Canva
 
 Canva jest edytowalną kopią roboczą i miejscem do przeglądu wizualnego. Nie zastępuje źródeł przechowywanych w repozytorium.
