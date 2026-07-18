@@ -9,6 +9,18 @@ Worker pobiera zadania z Supabase, pobiera zdjęcia z prywatnego bucketu `receip
 - dostęp do internetu przy instalacji zależności i pierwszym pobraniu modeli;
 - sekretny klucz projektu Supabase przechowywany wyłącznie lokalnie.
 
+## Konfiguracja środowiska
+
+Worker szuka konfiguracji w następującej kolejności: zmienne uruchomionego procesu, główny plik `.env.local`, a następnie `apps/receipt-worker/.env` jako fallback.
+
+W głównym `.env.local` pozostają zmienne frontendu `VITE_SUPABASE_URL` oraz `VITE_SUPABASE_PUBLISHABLE_KEY`. Aby uruchomić worker, dodaj tam osobną zmienną bez prefiksu `VITE_`:
+
+```env
+SUPABASE_SECRET_KEY=sb_secret_...
+```
+
+Sekret nie jest wystawiany do przeglądarki, ponieważ Vite udostępnia tylko zmienne zaczynające się od `VITE_`.
+
 ## Instalacja na Windows
 
 W katalogu `apps/receipt-worker`:
