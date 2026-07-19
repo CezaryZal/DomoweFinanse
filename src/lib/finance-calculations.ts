@@ -10,9 +10,10 @@ export function calculateCategoryTotals(categories: Category[], expenses: Expens
   return categories
     .map((category) => ({
       ...category,
-      total: expenses
-        .filter((expense) => expense.categoryId === category.id)
-        .reduce((sum, expense) => sum + expense.amount, 0),
+      total: expenses.reduce((sum, expense) => {
+        if (expense.receipt) return sum + (expense.receipt.categoryBreakdown.find((group) => group.categoryId === category.id)?.total ?? 0)
+        return sum + (expense.categoryId === category.id ? expense.amount : 0)
+      }, 0),
     }))
     .sort((a, b) => b.total - a.total)
 }

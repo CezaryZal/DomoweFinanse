@@ -29,7 +29,7 @@ class ReceiptRepository:
     def claim_next_job(self) -> dict[str, Any] | None:
         candidates = (
             self.client.table("receipt_processing_jobs")
-            .select("id, receipt_id, user_id, attempts")
+            .select("id, receipt_id, user_id, attempts, parser_variant")
             .eq("status", "pending")
             .lte("available_at", utc_now())
             .order("created_at")
@@ -55,7 +55,7 @@ class ReceiptRepository:
             )
             .eq("id", candidate["id"])
             .eq("status", "pending")
-            .select("id, receipt_id, user_id, attempts")
+            .select("id, receipt_id, user_id, attempts, parser_variant")
             .execute()
             .data
         )

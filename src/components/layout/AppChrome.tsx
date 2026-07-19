@@ -1,4 +1,4 @@
-import { BarChart3, Camera, FileText, LayoutDashboard, LogOut, Menu, Plus, ReceiptText, Tag } from 'lucide-react'
+import { BarChart3, Camera, FileText, LayoutDashboard, LogOut, Menu, Plus, ReceiptText, Settings, Tag } from 'lucide-react'
 import type { View } from '../../types'
 
 export function Sidebar({ activeView, onNavigate, onSignOut }: { activeView: View; onNavigate: (view: View) => void; onSignOut: () => void }) {
@@ -7,6 +7,7 @@ export function Sidebar({ activeView, onNavigate, onSignOut }: { activeView: Vie
     { view: 'expenses', label: 'Wydatki', icon: FileText },
     { view: 'receipts', label: 'Paragony', icon: ReceiptText },
     { view: 'categories', label: 'Kategorie', icon: Tag },
+    { view: 'settings', label: 'Ustawienia', icon: Settings },
   ]
 
   return <aside className="sidebar">

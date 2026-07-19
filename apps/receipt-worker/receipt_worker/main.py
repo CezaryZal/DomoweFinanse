@@ -43,6 +43,9 @@ class ReceiptWorker:
             return False
 
         receipt = job["receipt"]
+        parser_variant = job.get("parser_variant", "rules")
+        if parser_variant != "rules":
+            LOGGER.warning("Parser %s nie jest jeszcze skonfigurowany; używam PaddleOCR + reguły", parser_variant)
         LOGGER.info("Przetwarzanie paragonu %s, próba %s", receipt["id"], job["attempts"])
         try:
             with tempfile.TemporaryDirectory(prefix="domowe-finanse-receipt-") as temp_directory:

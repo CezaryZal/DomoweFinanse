@@ -5,7 +5,7 @@ import { Dashboard } from './Dashboard'
 describe('Dashboard', () => {
   it('shows an actionable empty state without invalid numeric values', () => {
     const onAddExpense = vi.fn()
-    render(<Dashboard expenses={[]} categories={[]} total={0} categoryTotals={[]} onNavigate={vi.fn()} onAddExpense={onAddExpense} />)
+    render(<Dashboard expenses={[]} categories={[]} total={0} categoryTotals={[]} onNavigate={vi.fn()} onAddExpense={onAddExpense} onOpenReceipt={vi.fn()} />)
 
     expect(screen.getByText('Brak wydatków')).toBeInTheDocument()
     expect(screen.getByText('Średnio —')).toBeInTheDocument()

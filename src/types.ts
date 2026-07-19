@@ -14,14 +14,17 @@ export type Expense = {
   categoryId: string | null
   notes?: string | null
   source: 'manual' | 'receipt' | 'bank'
+  receipt?: { itemCount: number; categoryBreakdown: Array<{ categoryId: string | null; itemCount: number; total: number }>; productNames: string[] }
 }
 
-export type View = 'dashboard' | 'expenses' | 'receipts' | 'categories'
+export type View = 'dashboard' | 'expenses' | 'receipts' | 'categories' | 'settings'
 
 export type Feedback = {
   type: 'error' | 'success'
   message: string
 }
+
+export type ReceiptParserVariant = 'rules' | 'qwen' | 'gemini'
 
 export type ReceiptStatus = 'uploading' | 'queued' | 'processing' | 'needs_review' | 'approved' | 'failed'
 

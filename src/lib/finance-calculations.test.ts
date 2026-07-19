@@ -27,6 +27,15 @@ describe('finance calculations', () => {
     expect(getAverageExpense(50, 2)).toBe(25)
   })
 
+  it('uses receipt item categories without counting the receipt total twice', () => {
+    const receiptExpense: Expense = {
+      id: '3', merchant: 'Sklep', amount: 50, currency: 'PLN', date: '2026-07-03', categoryId: null, source: 'receipt',
+      receipt: { itemCount: 2, productNames: ['Chleb', 'Płyn'], categoryBreakdown: [{ categoryId: 'food', itemCount: 1, total: 20 }, { categoryId: 'home', itemCount: 1, total: 30 }] },
+    }
+
+    expect(calculateCategoryTotals(categories, [receiptExpense]).map((category) => category.total)).toEqual([30, 20])
+  })
+
   it('builds cumulative chart points from expense dates', () => {
     expect(buildSpendingPoints(expenses)).toBe('0,76 420,10')
   })

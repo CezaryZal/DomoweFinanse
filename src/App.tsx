@@ -9,19 +9,23 @@ import { Dashboard } from './components/dashboard/Dashboard'
 import { Sidebar, Topbar } from './components/layout/AppChrome'
 import { ExpensesPage } from './components/expenses/ExpensesPage'
 import { ReceiptsPage } from './components/receipts/ReceiptsPage'
+import { SettingsPage } from './components/settings/SettingsPage'
 import { calculateCategoryTotals, calculateTotal } from './lib/finance-calculations'
 import { supabase } from './lib/supabase'
 import { useFinanceData } from './hooks/useFinanceData'
-import type { Category, Expense, View } from './types'
+import { getReceiptParserVariant, saveReceiptParserVariant } from './lib/finance'
+import type { Category, Expense, ReceiptParserVariant, View } from './types'
 
 function App() {
   const [view, setView] = useState<View>('dashboard')
+  const [expandedReceiptId, setExpandedReceiptId] = useState<string | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [isAuthReady, setAuthReady] = useState(false)
   const [isExpenseOpen, setExpenseOpen] = useState(false)
   const [isCategoryOpen, setCategoryOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  const [parserVariant, setParserVariant] = useState<ReceiptParserVariant>('rules')
   const { expenses, categories, isLoading, isSaving, error, feedback, addExpense, addCategory, editExpense, editCategory, removeExpense, refreshExpenses, clearMessages } = useFinanceData(session)
 
   useEffect(() => {
@@ -39,6 +43,8 @@ function App() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
+  useEffect(() => { if (session?.user.id) void getReceiptParserVariant(session.user.id).then(setParserVariant) }, [session?.user.id])
+
   const total = useMemo(() => calculateTotal(expenses), [expenses])
   const categoryTotals = useMemo(() => calculateCategoryTotals(categories, expenses), [categories, expenses])
 
@@ -55,10 +61,11 @@ function App() {
     <main className="main-content">
       <FeedbackBanner feedback={feedback} error={error} onDismiss={clearMessages} />
       <Topbar onAddExpense={openNewExpense} onOpenReceipt={() => setView('receipts')} onMenu={() => setView('dashboard')} userEmail={session.user.email ?? ''} onSignOut={() => void signOut()} />
-      {view === 'dashboard' && <Dashboard expenses={expenses} categories={categories} total={total} categoryTotals={categoryTotals} onNavigate={setView} onAddExpense={openNewExpense} />}
-      {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} onAdd={openNewExpense} onDelete={(id) => void removeExpense(id)} onEdit={openExpenseEditor} />}
+      {view === 'dashboard' && <Dashboard expenses={expenses} categories={categories} total={total} categoryTotals={categoryTotals} onNavigate={setView} onAddExpense={openNewExpense} onOpenReceipt={(id) => { setExpandedReceiptId(id); setView('expenses') }} />}
+      {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} expandedReceiptId={expandedReceiptId} onOpenReceipt={(id) => setExpandedReceiptId(id)} onAdd={openNewExpense} onDelete={(id) => void removeExpense(id)} onEdit={openExpenseEditor} />}
       {view === 'categories' && <CategoriesPage categories={categories} categoryTotals={categoryTotals} onAdd={openNewCategory} onEdit={openCategoryEditor} />}
       {view === 'receipts' && <ReceiptsPage userId={session.user.id} categories={categories} onExpenseCreated={() => void refreshExpenses()} />}
+      {view === 'settings' && <SettingsPage initialVariant={parserVariant} isSaving={isSaving} onSave={(variant) => void saveParserVariant(variant)} />}
     </main>
     {isExpenseOpen && <ExpenseModal key={editingExpense?.id ?? 'new-expense'} categories={categories} initialExpense={editingExpense} isSaving={isSaving} onClose={closeExpenseModal} onSubmit={(expense) => void submitExpense(expense)} />}
     {isCategoryOpen && <CategoryModal key={editingCategory?.id ?? 'new-category'} initialCategory={editingCategory} isSaving={isSaving} onClose={closeCategoryModal} onSubmit={(category) => void submitCategory(category)} />}
@@ -106,6 +113,10 @@ function App() {
   async function submitCategory(category: Omit<Category, 'id'>) {
     const saved = editingCategory ? await editCategory(editingCategory.id, category) : await addCategory(category)
     if (saved) closeCategoryModal()
+  }
+
+  async function saveParserVariant(variant: ReceiptParserVariant) {
+    try { await saveReceiptParserVariant(session!.user.id, variant); setParserVariant(variant) } catch { /* Feedback remains available for future settings-specific errors. */ }
   }
 }
 

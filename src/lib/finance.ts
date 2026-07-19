@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Category, Expense } from '../types'
+import type { Category, Expense, ReceiptParserVariant } from '../types'
 
 type CategoryRow = { id: string; name: string; color: string; icon: string }
 type ExpenseRow = {
@@ -11,6 +11,7 @@ type ExpenseRow = {
   category_id: string | null
   notes: string | null
   source: Expense['source']
+  receipts: Array<{ receipt_items: Array<{ category_id: string | null; name: string; total_price: number | string }> | null }> | null
 }
 
 function mapCategory(row: CategoryRow): Category {
@@ -18,6 +19,13 @@ function mapCategory(row: CategoryRow): Category {
 }
 
 function mapExpense(row: ExpenseRow): Expense {
+  const receiptItems = row.receipts?.[0]?.receipt_items ?? []
+  const categoryBreakdown = receiptItems.reduce<NonNullable<Expense['receipt']>['categoryBreakdown']>((groups, item) => {
+    const existing = groups.find((group) => group.categoryId === item.category_id)
+    if (existing) { existing.itemCount += 1; existing.total += Number(item.total_price); return groups }
+    groups.push({ categoryId: item.category_id, itemCount: 1, total: Number(item.total_price) })
+    return groups
+  }, [])
   return {
     id: row.id,
     merchant: row.merchant,
@@ -27,6 +35,7 @@ function mapExpense(row: ExpenseRow): Expense {
     categoryId: row.category_id ?? '',
     notes: row.notes,
     source: row.source,
+    receipt: receiptItems.length ? { itemCount: receiptItems.length, categoryBreakdown, productNames: receiptItems.map((item) => item.name) } : undefined,
   }
 }
 
@@ -44,7 +53,7 @@ export async function listCategories(userId: string) {
 export async function listExpenses(userId: string) {
   const { data, error } = await supabase
     .from('expenses')
-    .select('id, merchant, amount, currency, spent_at, category_id, notes, source')
+    .select('id, merchant, amount, currency, spent_at, category_id, notes, source, receipts!receipts_expense_id_user_id_fkey(receipt_items(category_id, name, total_price))')
     .eq('user_id', userId)
     .order('spent_at', { ascending: false })
     .order('created_at', { ascending: false })
@@ -126,5 +135,16 @@ export async function deleteExpense(userId: string, expenseId: string) {
     .eq('id', expenseId)
     .eq('user_id', userId)
 
+  if (error) throw error
+}
+
+export async function getReceiptParserVariant(userId: string): Promise<ReceiptParserVariant> {
+  const { data, error } = await supabase.from('user_receipt_settings').select('parser_variant').eq('user_id', userId).maybeSingle()
+  if (error) throw error
+  return (data?.parser_variant as ReceiptParserVariant | undefined) ?? 'rules'
+}
+
+export async function saveReceiptParserVariant(userId: string, parserVariant: ReceiptParserVariant) {
+  const { error } = await supabase.from('user_receipt_settings').upsert({ user_id: userId, parser_variant: parserVariant, updated_at: new Date().toISOString() })
   if (error) throw error
 }
