@@ -1,0 +1,2 @@
+-- Migration history marker. The completed definition is in
+-- 20260719072940_validate_approved_receipt_editing.sql.

@@ -63,6 +63,7 @@ export function useReceipts(userId: string, onExpenseCreated: () => void) {
       await updateReceiptReview(receiptId, review)
       setFeedback({ type: 'success', message: 'Korekta paragonu została zapisana.' })
       await refresh(false)
+      onExpenseCreated()
       return true
     } catch (error) {
       setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się zapisać korekty.' })
