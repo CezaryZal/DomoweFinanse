@@ -1,5 +1,7 @@
 # Domowe Finanse
 
+> Worker paragonów jest rozdzielony na rozpoznawanie PaddleOCR i parser regułowy. Kolejne modele AI będą dodawane jako osobne silniki, bez modyfikowania `recognition/paddle/`.
+
 Prywatna aplikacja webowa do monitorowania wydatków gospodarstwa domowego. Docelowo umożliwi ręczne dodawanie wydatków, analizę zdjęć paragonów, kategoryzację wspomaganą przez AI oraz wspólny dostęp członków gospodarstwa.
 
 ## Aktualny stan projektu
@@ -20,6 +22,8 @@ Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 - ręczna korekta wyniku OCR w stanach „Do weryfikacji” oraz „Błąd OCR”; zapis kompletnej korekty po błędzie przenosi paragon do stanu „Do weryfikacji”;
 - zatwierdzanie wyniku OCR w stanie „Do weryfikacji”; brak kategorii dowolnego produktu blokuje zatwierdzenie, natomiast różnica sum pozostaje ostrzeżeniem;
 - edycja danych i pozycji analizowanego paragonu oraz usuwanie paragonu wraz z jego obrazem; usunięcie zatwierdzonego paragonu usuwa także powiązany wydatek;
+- edycja zatwierdzonego paragonu z równoczesną aktualizacją powiązanego wydatku;
+- kolorowe tagi kategorii dla ręcznych wydatków i paragonów oraz podsumowania kategorii w zwiniętym widoku paragonu;
 - podstawowy responsywny interfejs zgodny z projektem graficznym.
 
 Wydatki, kategorie i metadane paragonów są przechowywane w Supabase Postgres. Zdjęcia trafiają do prywatnego bucketu Supabase Storage, a ciężkie przetwarzanie obrazu wykonuje lokalny worker Python.

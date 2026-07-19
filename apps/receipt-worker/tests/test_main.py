@@ -69,7 +69,7 @@ def claimed_job() -> dict:
 
 
 class ReceiptWorkerLeaseTests(TestCase):
-    @patch("receipt_worker.main.ReceiptOcrEngine")
+    @patch("receipt_worker.main.PaddleReceiptRecognizer")
     @patch("receipt_worker.main.ReceiptRepository")
     def test_stale_completion_does_not_attempt_to_fail_the_newer_claim(self, repository_class, _ocr_class) -> None:
         repository = repository_class.return_value
@@ -90,7 +90,7 @@ class ReceiptWorkerLeaseTests(TestCase):
         self.assertTrue(processed)
         repository.fail_job.assert_not_called()
 
-    @patch("receipt_worker.main.ReceiptOcrEngine")
+    @patch("receipt_worker.main.PaddleReceiptRecognizer")
     @patch("receipt_worker.main.ReceiptRepository")
     def test_stale_failure_does_not_stop_the_worker_loop(self, repository_class, _ocr_class) -> None:
         repository = repository_class.return_value

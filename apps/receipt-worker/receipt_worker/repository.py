@@ -6,7 +6,7 @@ from typing import Any
 from supabase import Client, create_client
 
 from .models import ParsedReceipt
-from .parser import PARSER_VERSION
+from .parsers.rules import PARSER_VERSION
 
 RECEIPT_BUCKET = "receipt-images"
 

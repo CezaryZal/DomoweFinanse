@@ -8,8 +8,8 @@ from pathlib import Path
 
 from .config import Settings
 from .models import ParsedReceipt
-from .ocr_engine import ReceiptOcrEngine, crop_to_text_content, preprocess_images
-from .parser import parse_receipt, select_best_parse
+from .recognition.paddle import PaddleReceiptRecognizer, crop_to_text_content, preprocess_images
+from .parsers.rules import parse_receipt, select_best_parse
 from .repository import ReceiptRepository, StaleJobLeaseError
 
 LOGGER = logging.getLogger("receipt-worker")
@@ -30,12 +30,12 @@ class ReceiptWorker:
             max_attempts=settings.max_attempts,
             lease_seconds=settings.lease_seconds,
         )
-        self.ocr = ReceiptOcrEngine()
-        self.flat_ocr: ReceiptOcrEngine | None = None
+        self.ocr = PaddleReceiptRecognizer()
+        self.flat_ocr: PaddleReceiptRecognizer | None = None
 
-    def flat_ocr_engine(self) -> ReceiptOcrEngine:
+    def flat_ocr_engine(self) -> PaddleReceiptRecognizer:
         if self.flat_ocr is None:
-            self.flat_ocr = ReceiptOcrEngine(use_document_recovery=False)
+            self.flat_ocr = PaddleReceiptRecognizer(use_document_recovery=False)
         return self.flat_ocr
 
     def process_once(self) -> bool:

@@ -1,5 +1,21 @@
 # Lokalny worker OCR paragonów
 
+## Struktura i rozwój silników
+
+Aktualny wariant PaddleOCR jest odseparowany od parsera, aby kolejne silniki AI nie zmieniały sprawdzonego przepływu:
+
+```text
+receipt_worker/
+  recognition/
+    contracts.py          # wspólny kontrakt: obraz -> linie OCR
+    paddle/               # PP-OCRv5, OpenCV i fallback
+  parsers/
+    rules/                # reguły: linie OCR -> ParsedReceipt
+  main.py                 # kolejka i orkiestracja
+```
+
+Nowy silnik AI powinien implementować `ReceiptTextRecognizer` albo zwracać ten sam wynik `ParsedReceipt` przez osobny parser. Nie należy dopisywać logiki AI do `recognition/paddle/` ani zmieniać parsera regułowego bez osobnego benchmarku. Moduły `ocr_engine.py` i `parser.py` pozostają tylko kompatybilnymi eksportami dla starszych importów i testów.
+
 Worker pobiera zadania z Supabase, pobiera zdjęcia z prywatnego bucketu `receipt-images`, przygotowuje kilka wariantów obrazu przez OpenCV i uruchamia polski model PP-OCRv5 przez PaddleOCR. Wynik jest parsowany regułami i zawsze trafia do ręcznej weryfikacji w aplikacji.
 
 ## Wymagania
