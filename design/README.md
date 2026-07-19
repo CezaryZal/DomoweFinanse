@@ -20,6 +20,7 @@
 | Paragony — dodawanie produktu | [`mockups/06-paragony-dodawanie-produktu.png`](mockups/06-paragony-dodawanie-produktu.png) |
 | Kategorie — lista | [`mockups/07-kategorie-lista.png`](mockups/07-kategorie-lista.png) |
 | Kategorie — edycja | [`mockups/08-kategorie-edycja.png`](mockups/08-kategorie-edycja.png) |
+| Ustawienia — parser paragonów | [`mockups/09-ustawienia-parser.png`](mockups/09-ustawienia-parser.png) |
 
 Widok **Wydatki — lista** rozróżnia obecnie dwa typy zapisów:
 
@@ -28,6 +29,8 @@ Widok **Wydatki — lista** rozróżnia obecnie dwa typy zapisów:
 
 Paragon nie jest rozbijany na niezależne wydatki. Dzięki temu jego kwota całkowita pozostaje jednym zapisem, a rozwinięcie pokazuje kontrolowany podział bez ryzyka podwójnego zliczania.
 
+Widok **Ustawienia — parser paragonów** przewiduje wybór sposobu analizy nowych paragonów. Makieta obejmuje parser regułowy, wariant eksperymentalny z Qwen oraz model AI Gemini 3.5. Zmiana wymaga jawnego zapisania i nie wpływa na analizy już zakończone ani będące w toku. Konfiguracja danych dostępowych modelu AI pozostaje poza interfejsem przeglądarkowym.
+
 ## Canva
 
 Canva jest edytowalną kopią roboczą i miejscem do przeglądu wizualnego. Nie zastępuje źródeł przechowywanych w repozytorium.
@@ -35,7 +38,7 @@ Canva jest edytowalną kopią roboczą i miejscem do przeglądu wizualnego. Nie 
 - [Edytuj projekt „Domowe Finanse” w Canvie](https://www.canva.com/d/vKeX4uOCwN5WDqL)
 - [Otwórz podgląd projektu w Canvie](https://www.canva.com/d/GmU4mZTAWSAr8Ub)
 
-Projekt Canva zawiera osiem stron odpowiadających plikom z katalogu `design/mockups/`.
+Zestaw źródłowy zawiera dziewięć stron. Projekt Canva można zaktualizować przez import najnowszych plików z katalogu `design/mockups/`.
 
 ## Zasady aktualizacji
 
