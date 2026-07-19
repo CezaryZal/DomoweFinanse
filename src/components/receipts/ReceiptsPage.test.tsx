@@ -20,7 +20,8 @@ describe('ReceiptsPage', () => {
     render(<ReceiptsPage userId="user-1" categories={[{ id: 'category-1', name: 'Żywność', color: '#fff', icon: 'basket' }]} onExpenseCreated={vi.fn()} />)
 
     expect(screen.queryByText('Mleko')).not.toBeInTheDocument()
-    expect(screen.getByText((content) => content.includes('12,50'))).toBeInTheDocument()
+    expect(screen.getAllByText((content) => content.includes('12,50'))).toHaveLength(2)
+    expect(screen.getByText((content, element) => element?.tagName === 'SMALL' && content.includes('1 produkt') && content.includes('12,50'))).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Sklep testowy'))
     expect(screen.getByText('Mleko')).toBeInTheDocument()

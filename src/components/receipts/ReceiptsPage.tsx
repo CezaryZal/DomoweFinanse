@@ -48,6 +48,12 @@ function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSav
   const receiptTotal = Number(total.replace(',', '.'))
   const missingCategory = hasUncategorizedReceiptItems(items)
   const displayName = merchant || receipt.originalFilename
+  const categorySummary = items.reduce<Array<{ categoryId: string | null; itemCount: number; total: number }>>((groups, item) => {
+    const existing = groups.find((group) => group.categoryId === item.categoryId)
+    if (existing) { existing.itemCount += 1; existing.total += item.totalPrice; return groups }
+    groups.push({ categoryId: item.categoryId, itemCount: 1, total: item.totalPrice })
+    return groups
+  }, [])
 
   function update(index: number, field: keyof ReceiptItemDraft, value: string) {
     setItems((current) => current.map((item, itemIndex) => itemIndex !== index ? item : { ...item, [field]: field === 'name' || field === 'categoryId' ? value || null : value === '' ? null : Number(value.replace(',', '.')) }))
@@ -70,6 +76,7 @@ function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSav
         <div className="receipt-summary-copy"><strong>{expanded ? 'Zweryfikuj dane paragonu' : displayName}</strong><span>{expanded ? `${items.length} ${items.length === 1 ? 'produkt' : 'produktów'}` : `${purchasedAt || 'Brak daty'} · ${items.length} ${items.length === 1 ? 'produkt' : 'produktów'}`}</span>{!expanded && <strong className="receipt-summary-total">{Number.isFinite(receiptTotal) ? money.format(receiptTotal) : 'Brak sumy'}</strong>}</div>
         <div className="receipt-card-actions"><span className={`receipt-status ${receipt.status}`}>{approved ? 'Zatwierdzony' : 'Do weryfikacji'}</span>{approved && <button className="button secondary receipt-edit-button" onClick={(event) => { event.stopPropagation(); if (editing) { void saveChanges(); return } setExpanded(true); setEditing(true) }} disabled={isSaving}>{editing ? <><Save size={15} />Zapisz</> : <><Pencil size={15} />Edytuj</>}</button>}<button className="text-button receipt-toggle-button" aria-label={expanded ? 'Zwiń paragon' : 'Rozwiń paragon'} onClick={(event) => { event.stopPropagation(); setExpanded((value) => !value) }}>{expanded ? <>Zwiń <ChevronUp size={16} /></> : <>Szczegóły <ChevronDown size={16} /></>}</button><button className="delete-button" aria-label="Usuń paragon" onClick={(event) => { event.stopPropagation(); onDelete() }} disabled={isSaving}><Trash2 size={17} /></button></div>
       </header>
+      {!expanded && <div className="receipt-category-summary">{categorySummary.length ? categorySummary.map((group) => { const category = categories.find((item) => item.id === group.categoryId); return <span key={group.categoryId ?? 'none'} style={category ? { backgroundColor: `${category.color}20`, color: category.color } : undefined}><strong>{category?.name ?? 'Bez kategorii'}</strong><small>{group.itemCount} {group.itemCount === 1 ? 'produkt' : 'produktów'} · {money.format(group.total)}</small></span> }) : <small>Brak rozpoznanych kategorii.</small>}</div>}
       {expanded && <>
         <div className="receipt-meta-grid"><label>Sklep<input value={merchant} disabled={readOnly} onChange={(event) => setMerchant(event.target.value)} /></label><label>Data<input type="date" value={purchasedAt} disabled={readOnly} onChange={(event) => setPurchasedAt(event.target.value)} /></label><label>Suma paragonu<input value={total} disabled={readOnly} onChange={(event) => setTotal(event.target.value)} /></label></div>
         {!readOnly && <div className="receipt-bulk"><label>Kategoria dla wszystkich produktów<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Wybierz kategorię</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><button className="button secondary" disabled={!categoryId} onClick={() => setItems((current) => current.map((item) => ({ ...item, categoryId })))}>Zastosuj do wszystkich</button></div>}

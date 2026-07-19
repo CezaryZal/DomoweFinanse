@@ -12,10 +12,7 @@ export function ExpenseModal({ categories, initialExpense, isSaving, onClose, on
   function submit(event: FormEvent) {
     event.preventDefault()
     const parsedAmount = Number(amount.replace(',', '.'))
-    if (!merchant.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setFormError('Podaj nazwę sklepu i kwotę większą od zera.')
-      return
-    }
+    if (!merchant.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) { setFormError('Podaj nazwę sklepu i kwotę większą od zera.'); return }
     onSubmit({ merchant: merchant.trim(), amount: parsedAmount, currency: initialExpense?.currency ?? 'PLN', categoryId: categoryId || null, date: initialExpense?.date ?? new Date().toISOString().slice(0, 10), notes: initialExpense?.notes ?? null, source: initialExpense?.source ?? 'manual' })
   }
 
@@ -30,19 +27,18 @@ export function ExpenseModal({ categories, initialExpense, isSaving, onClose, on
 
 export function CategoryModal({ initialCategory, isSaving, onClose, onSubmit }: { initialCategory?: Category | null; isSaving: boolean; onClose: () => void; onSubmit: (category: Omit<Category, 'id'>) => void }) {
   const [name, setName] = useState(initialCategory?.name ?? '')
+  const [color, setColor] = useState(initialCategory?.color ?? '#7d72ea')
   const [formError, setFormError] = useState('')
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    if (!name.trim()) {
-      setFormError('Podaj nazwę kategorii.')
-      return
-    }
-    onSubmit({ name: name.trim(), color: '#7d72ea', icon: 'tag' })
+    if (!name.trim()) { setFormError('Podaj nazwę kategorii.'); return }
+    onSubmit({ name: name.trim(), color, icon: initialCategory?.icon ?? 'tag' })
   }
 
   return <ModalShell title={initialCategory ? 'Edytuj kategorię' : 'Nowa kategoria'} onClose={onClose}><form className="modal-form" onSubmit={submit}>
     <label>Nazwa kategorii<input value={name} onChange={(event) => setName(event.target.value)} placeholder="np. Zwierzęta" autoFocus /></label>
+    <label>Kolor kategorii<input type="color" value={color} onChange={(event) => setColor(event.target.value)} aria-label="Kolor kategorii" /></label>
     {formError && <div className="form-error" role="alert">{formError}</div>}
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Anuluj</button><button className="button primary" type="submit" disabled={isSaving}><Check size={17} />{isSaving ? 'Zapisywanie…' : initialCategory ? 'Zapisz zmiany' : 'Dodaj kategorię'}</button></div>
   </form></ModalShell>
