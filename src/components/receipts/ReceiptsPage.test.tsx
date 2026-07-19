@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Category, Receipt } from '../../types'
 import { ReceiptsPage } from './ReceiptsPage'
@@ -136,8 +136,51 @@ describe('ReceiptsPage', () => {
 
     expect(screen.getByText('Błąd OCR')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Brak tekstu na zdjęciu')
+    expect(screen.getByRole('button', { name: /popraw ręcznie/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /zapisz korektę/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /zatwierdź jako wydatek/i })).not.toBeInTheDocument()
+  })
+
+  it('lets the user recover a failed receipt without approving it immediately', async () => {
+    let currentReceipt = makeReceipt({ status: 'failed', jobStatus: 'failed', processingError: 'OCR przerwany' })
+    mocks.useReceipts.mockImplementation(() => receiptApi([currentReceipt]))
+    const view = render(page())
+
+    fireEvent.click(screen.getByRole('button', { name: /popraw ręcznie/i }))
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('Mleko')).toBeEnabled()
+    expect(screen.getByRole('button', { name: /anuluj/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /zatwierdź jako wydatek/i })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /zapisz korektę/i }))
+
+    await waitFor(() => expect(mocks.saveReview).toHaveBeenCalledOnce())
+    expect(mocks.approve).not.toHaveBeenCalled()
+
+    currentReceipt = makeReceipt({ status: 'needs_review', jobStatus: 'failed', processingError: 'OCR przerwany' })
+    view.rerender(page())
+    expect(screen.getByText('Do weryfikacji')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /zatwierdź jako wydatek/i })).toBeInTheDocument()
+  })
+
+  it('opens an empty failed receipt for manual item entry and can cancel it', () => {
+    mocks.useReceipts.mockReturnValue(receiptApi([makeReceipt({ status: 'failed', jobStatus: 'failed', items: [] })]))
+    render(page())
+
+    fireEvent.click(screen.getByRole('button', { name: /popraw ręcznie/i }))
+    fireEvent.change(screen.getByDisplayValue('Sklep testowy'), { target: { value: 'Niezapisany sklep' } })
+    fireEvent.click(screen.getByRole('button', { name: /dodaj produkt/i }))
+    expect(screen.getByRole('button', { name: /dodaj produkt/i })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /anuluj/i }))
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(mocks.saveReview).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /popraw ręcznie/i }))
+    expect(screen.getByDisplayValue('Sklep testowy')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Niezapisany sklep')).not.toBeInTheDocument()
+    expect(screen.getByText('Brak rozpoznanych produktów.')).toBeInTheDocument()
   })
 
   it('shows a total difference as a warning without blocking approval', () => {

@@ -15,6 +15,7 @@ class Settings:
     supabase_secret_key: str
     poll_seconds: int
     max_attempts: int
+    lease_seconds: int
     worker_id: str
 
     @classmethod
@@ -50,6 +51,7 @@ class Settings:
             supabase_url=supabase_url,
             supabase_secret_key=supabase_secret_key,
             poll_seconds=max(1, int(value("RECEIPT_WORKER_POLL_SECONDS", default="5"))),
-            max_attempts=max(1, int(value("RECEIPT_WORKER_MAX_ATTEMPTS", default="3"))),
+            max_attempts=min(10, max(1, int(value("RECEIPT_WORKER_MAX_ATTEMPTS", default="3")))),
+            lease_seconds=min(3600, max(60, int(value("RECEIPT_WORKER_LEASE_SECONDS", default="900")))),
             worker_id=value("RECEIPT_WORKER_ID") or f"{socket.gethostname()}-{os.getpid()}",
         )

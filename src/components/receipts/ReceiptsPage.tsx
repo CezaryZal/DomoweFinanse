@@ -62,8 +62,10 @@ export function ReceiptsPage({ userId, categories, onExpenseCreated }: { userId:
 function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSave, onApprove, onDelete }: { receipt: Receipt; imageUrl?: string; categories: Category[]; isSaving: boolean; onPreview: (url: string) => void; onSave: (id: string, review: ReceiptReview) => Promise<boolean>; onApprove: (id: string, categoryId: string | null) => Promise<boolean>; onDelete: () => void }) {
   const approved = receipt.status === 'approved'
   const reviewable = receipt.status === 'needs_review'
+  const failed = receipt.status === 'failed'
   const [expanded, setExpanded] = useState(!approved)
   const [editing, setEditing] = useState(false)
+  const [recoveringFailed, setRecoveringFailed] = useState(false)
   const [merchant, setMerchant] = useState(receipt.merchant ?? '')
   const [purchasedAt, setPurchasedAt] = useState(receipt.purchasedAt ?? '')
   const [total, setTotal] = useState(receipt.totalAmount === null ? '' : String(receipt.totalAmount).replace('.', ','))
@@ -73,7 +75,8 @@ function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSav
   const [error, setError] = useState('')
   const dirtyRef = useRef(false)
   const manualItemSequence = useRef(0)
-  const editable = reviewable || (approved && editing)
+  const showEditor = reviewable || approved || recoveringFailed
+  const editable = reviewable || recoveringFailed || (approved && editing)
   const readOnly = !editable
   const receiptTotal = total.trim() ? Number(total.replace(',', '.')) : Number.NaN
   const itemsTotal = items.reduce((sum, item) => sum + item.totalPrice, 0)
@@ -127,7 +130,20 @@ function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSav
     if (value && await onSave(receipt.id, value)) {
       dirtyRef.current = false
       setEditing(false)
+      setRecoveringFailed(false)
     }
+  }
+
+  function cancelFailedRecovery() {
+    dirtyRef.current = false
+    setRecoveringFailed(false)
+    setMerchant(receipt.merchant ?? '')
+    setPurchasedAt(receipt.purchasedAt ?? '')
+    setTotal(receipt.totalAmount === null ? '' : String(receipt.totalAmount).replace('.', ','))
+    setCategoryId(receipt.categoryId ?? '')
+    setItems(buildItemDrafts(receipt))
+    setOpenItem(null)
+    setError('')
   }
 
   return <section className={`receipt-review-layout ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
@@ -135,17 +151,17 @@ function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSav
     <section className="receipt-review-card">
       <header className="receipt-summary-header" onClick={() => setExpanded((value) => !value)}>
         <div className="receipt-summary-copy"><strong>{expanded ? 'Zweryfikuj dane paragonu' : displayName}</strong><span>{expanded ? `${items.length} ${items.length === 1 ? 'produkt' : 'produktów'}` : `${purchasedAt || 'Brak daty'} · ${items.length} ${items.length === 1 ? 'produkt' : 'produktów'}`}</span>{!expanded && <strong className="receipt-summary-total">{Number.isFinite(receiptTotal) ? money.format(receiptTotal) : 'Brak sumy'}</strong>}</div>
-        <div className="receipt-card-actions"><span className={`receipt-status ${receipt.status}`}>{statusCopy.label}</span>{approved && <button className="button secondary receipt-edit-button" onClick={(event) => { event.stopPropagation(); if (editing) { void saveChanges(); return } setExpanded(true); setEditing(true) }} disabled={isSaving}>{editing ? <><Save size={15} />Zapisz</> : <><Pencil size={15} />Edytuj</>}</button>}<button className="text-button receipt-toggle-button" aria-label={expanded ? 'Zwiń paragon' : 'Rozwiń paragon'} onClick={(event) => { event.stopPropagation(); setExpanded((value) => !value) }}>{expanded ? <>Zwiń <ChevronUp size={16} /></> : <>Szczegóły <ChevronDown size={16} /></>}</button><button className="delete-button" aria-label="Usuń paragon" onClick={(event) => { event.stopPropagation(); onDelete() }} disabled={isSaving}><Trash2 size={17} /></button></div>
+        <div className="receipt-card-actions"><span className={`receipt-status ${receipt.status}`}>{statusCopy.label}</span>{approved && <button className="button secondary receipt-edit-button" onClick={(event) => { event.stopPropagation(); if (editing) { void saveChanges(); return } setExpanded(true); setEditing(true) }} disabled={isSaving}>{editing ? <><Save size={15} />Zapisz</> : <><Pencil size={15} />Edytuj</>}</button>}{failed && !recoveringFailed && <button className="button secondary receipt-edit-button" onClick={(event) => { event.stopPropagation(); setExpanded(true); setRecoveringFailed(true) }} disabled={isSaving}><Pencil size={15} />Popraw ręcznie</button>}<button className="text-button receipt-toggle-button" aria-label={expanded ? 'Zwiń paragon' : 'Rozwiń paragon'} onClick={(event) => { event.stopPropagation(); setExpanded((value) => !value) }}>{expanded ? <>Zwiń <ChevronUp size={16} /></> : <>Szczegóły <ChevronDown size={16} /></>}</button><button className="delete-button" aria-label="Usuń paragon" onClick={(event) => { event.stopPropagation(); onDelete() }} disabled={isSaving}><Trash2 size={17} /></button></div>
       </header>
       {!expanded && <div className="receipt-category-summary">{categorySummary.length ? categorySummary.map((group) => { const category = categories.find((item) => item.id === group.categoryId); return <span key={group.categoryId ?? 'none'} style={category ? { backgroundColor: `${category.color}20`, color: category.color } : undefined}><strong>{category?.name ?? 'Bez kategorii'}</strong><small>{group.itemCount} {group.itemCount === 1 ? 'produkt' : 'produktów'} · {money.format(group.total)}</small></span> }) : <small>Brak rozpoznanych kategorii.</small>}</div>}
-      {expanded && !reviewable && !approved && <div className={`receipt-progress ${receipt.status === 'failed' ? 'error' : ''}`} role={receipt.status === 'failed' ? 'alert' : 'status'}><span>{receipt.status === 'failed' && receipt.processingError ? `${statusCopy.message} ${receipt.processingError}` : statusCopy.message}</span></div>}
-      {expanded && (reviewable || approved) && <>
+      {expanded && !showEditor && <div className={`receipt-progress ${failed ? 'error' : ''}`} role={failed ? 'alert' : 'status'}><span>{failed && receipt.processingError ? `${statusCopy.message} ${receipt.processingError}` : statusCopy.message}</span></div>}
+      {expanded && showEditor && <>
         <div className="receipt-meta-grid"><label>Sklep<input value={merchant} disabled={readOnly} onChange={(event) => { markDirty(); setMerchant(event.target.value) }} /></label><label>Data<input type="date" value={purchasedAt} disabled={readOnly} onChange={(event) => { markDirty(); setPurchasedAt(event.target.value) }} /></label><label>Suma paragonu<input value={total} disabled={readOnly} onChange={(event) => { markDirty(); setTotal(event.target.value) }} /></label></div>
         {!readOnly && <div className="receipt-bulk"><label>Kategoria dla wszystkich produktów<select value={categoryId} onChange={(event) => { markDirty(); setCategoryId(event.target.value) }}><option value="">Wybierz kategorię</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><button className="button secondary" disabled={!categoryId} onClick={() => { markDirty(); setItems((current) => current.map((item) => ({ ...item, categoryId }))) }}>Zastosuj do wszystkich</button></div>}
         <div className="receipt-products-head"><strong>Produkty · {items.length} pozycji</strong>{!readOnly && <button className="button secondary" onClick={() => { markDirty(); setItems((current) => [...current, { draftId: `manual-${manualItemSequence.current++}`, name: '', categoryId: null, quantity: null, unitPrice: null, totalPrice: 0, sourceText: null }]) }}><Plus size={16} />Dodaj produkt</button>}</div>
         {items.length ? <><div className="receipt-table-head"><span>Nazwa produktu</span><span>Cena</span><span>Kategoria</span><span /></div>{items.map((item, index) => <ProductRow key={item.draftId} item={item} source={item.sourceText} categories={categories} readOnly={readOnly} open={openItem === index} onToggle={() => setOpenItem(openItem === index ? null : index)} onUpdate={(field, value) => update(index, field, value)} />)}</> : <p className="receipt-items-empty">Brak rozpoznanych produktów.</p>}
         <div className={`receipt-reconcile ${!hasComparableTotal || hasTotalDifference ? 'warning' : 'valid'}`}><div><strong>{!hasComparableTotal ? 'Brak sumy paragonu' : hasTotalDifference ? 'Sprawdź różnicę sum' : 'Suma pozycji jest zgodna'}</strong><span>{!hasComparableTotal ? 'Uzupełnij sumę przed zapisaniem paragonu.' : hasTotalDifference ? 'Różnica nie blokuje zatwierdzenia paragonu.' : 'Kwoty produktów odpowiadają sumie paragonu.'}</span></div><div><span>Suma pozycji<b>{money.format(itemsTotal)}</b></span><span>Suma paragonu<b>{hasComparableTotal ? money.format(receiptTotal) : '—'}</b></span><span>Różnica<b>{Number.isFinite(totalDifference) ? money.format(totalDifference) : '—'}</b></span></div></div>
-        <footer className="receipt-review-footer">{error && <span className="form-error">{error}</span>}<div>{reviewable && <button className="button secondary" disabled={isSaving} onClick={() => void saveChanges()}>Zapisz korektę</button>}{reviewable && <button className="button primary" disabled={isSaving || missingCategory} onClick={async () => { const value = review(); if (value && await onSave(receipt.id, value)) { dirtyRef.current = false; await onApprove(receipt.id, value.categoryId) } }}><Check size={16} />Zatwierdź jako wydatek</button>}</div></footer>
+        <footer className="receipt-review-footer">{error && <span className="form-error">{error}</span>}<div>{recoveringFailed && <button className="button secondary" disabled={isSaving} onClick={cancelFailedRecovery}>Anuluj</button>}{(reviewable || recoveringFailed) && <button className="button secondary" disabled={isSaving} onClick={() => void saveChanges()}>Zapisz korektę</button>}{reviewable && <button className="button primary" disabled={isSaving || missingCategory} onClick={async () => { const value = review(); if (value && await onSave(receipt.id, value)) { dirtyRef.current = false; await onApprove(receipt.id, value.categoryId) } }}><Check size={16} />Zatwierdź jako wydatek</button>}</div></footer>
       </>}
     </section>
   </section>

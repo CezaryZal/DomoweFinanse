@@ -10,7 +10,7 @@ from .config import Settings
 from .models import ParsedReceipt
 from .ocr_engine import ReceiptOcrEngine, crop_to_text_content, preprocess_images
 from .parser import parse_receipt, select_best_parse
-from .repository import ReceiptRepository
+from .repository import ReceiptRepository, StaleJobLeaseError
 
 LOGGER = logging.getLogger("receipt-worker")
 
@@ -24,10 +24,11 @@ class ReceiptWorker:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.repository = ReceiptRepository(
-            settings.supabase_url,
-            settings.supabase_secret_key,
-            settings.worker_id,
-            settings.max_attempts,
+            url=settings.supabase_url,
+            secret_key=settings.supabase_secret_key,
+            worker_id=settings.worker_id,
+            max_attempts=settings.max_attempts,
+            lease_seconds=settings.lease_seconds,
         )
         self.ocr = ReceiptOcrEngine()
         self.flat_ocr: ReceiptOcrEngine | None = None
@@ -89,9 +90,14 @@ class ReceiptWorker:
                                         candidates.append(parse_receipt(cropped_lines))
                 self.repository.complete_job(job, select_best_parse(candidates))
             LOGGER.info("Paragon %s oczekuje na weryfikację użytkownika", receipt["id"])
+        except StaleJobLeaseError:
+            LOGGER.warning("Lease zadania dla paragonu %s wygasł przed zapisem wyniku", receipt["id"])
         except Exception as error:  # Worker must record failures before continuing.
             LOGGER.exception("Błąd przetwarzania paragonu %s", receipt["id"])
-            self.repository.fail_job(job, error)
+            try:
+                self.repository.fail_job(job, error)
+            except StaleJobLeaseError:
+                LOGGER.warning("Nie zapisano błędu paragonu %s, ponieważ lease przejął inny worker", receipt["id"])
         return True
 
     def run(self, once: bool) -> None:

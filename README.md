@@ -17,7 +17,8 @@ Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 - kolejka zadań OCR i lokalny worker Python z PaddleOCR;
 - jawne stany obsługi paragonu w interfejsie: oczekiwanie, przetwarzanie, weryfikacja, błąd i zatwierdzenie;
 - automatyczne pokazanie wyniku OCR po zakończeniu przetwarzania bez nadpisywania rozpoczętej ręcznej korekty;
-- ręczna korekta i zatwierdzanie wyniku OCR w stanie „Do weryfikacji”; brak kategorii dowolnego produktu blokuje zatwierdzenie, natomiast różnica sum pozostaje ostrzeżeniem;
+- ręczna korekta wyniku OCR w stanach „Do weryfikacji” oraz „Błąd OCR”; zapis kompletnej korekty po błędzie przenosi paragon do stanu „Do weryfikacji”;
+- zatwierdzanie wyniku OCR w stanie „Do weryfikacji”; brak kategorii dowolnego produktu blokuje zatwierdzenie, natomiast różnica sum pozostaje ostrzeżeniem;
 - edycja danych i pozycji analizowanego paragonu oraz usuwanie paragonu wraz z jego obrazem; usunięcie zatwierdzonego paragonu usuwa także powiązany wydatek;
 - podstawowy responsywny interfejs zgodny z projektem graficznym.
 
@@ -114,11 +115,11 @@ Przepływ paragonu:
 1. Użytkownik dodaje zdjęcie JPEG, PNG lub WebP do 10 MB.
 2. Zdjęcie trafia do prywatnego bucketu `receipt-images`.
 3. Powstaje zadanie w `receipt_processing_jobs`; interfejs pokazuje oczekiwanie i blokuje korektę oraz zatwierdzanie.
-4. Lokalny worker pobiera obraz i wykonuje OCR, a interfejs pokazuje stan przetwarzania.
+4. Lokalny worker atomowo rezerwuje zadanie na ograniczony czas, pobiera obraz i wykonuje OCR, a interfejs pokazuje stan przetwarzania.
 5. Po zapisaniu propozycji OCR paragon przechodzi do stanu „Do weryfikacji”, a formularz automatycznie pokazuje rozpoznane dane.
 6. Użytkownik może poprawić sklep, datę, kwotę i pozycje. Kolejne odświeżenie danych nie nadpisuje rozpoczętej korekty.
 7. Zatwierdzenie jest możliwe po przypisaniu kategorii do każdego produktu i tworzy wydatek ze źródłem `receipt`.
-8. Błąd przetwarzania jest pokazany jako osobny stan bez akcji korekty i zatwierdzenia.
+8. Po błędzie OCR użytkownik może jawnie wybrać „Popraw ręcznie”; zapis kompletnej korekty przenosi paragon do stanu „Do weryfikacji”, a zatwierdzenie pozostaje osobnym krokiem.
 
 ### Hosting docelowy
 
@@ -154,6 +155,8 @@ Docelowo po zalogowaniu użytkownik będzie mógł dodawać wydatki, tworzyć ka
 - [x] kolejka elementów wymagających weryfikacji;
 - [x] ręczna korekta danych przez użytkownika;
 - [x] obsługa stanów OCR w interfejsie i bezpieczna synchronizacja wyniku z formularzem korekty;
+- [x] odzyskiwanie zadań po awarii workera oraz transakcyjny zapis wyniku OCR;
+- [x] ręczne odzyskanie paragonu po błędzie OCR bez ponownego uruchamiania workera;
 - [ ] benchmark na prawdziwych polskich paragonach;
 - [ ] propozycje kategorii na podstawie pozycji;
 - [ ] opcjonalny lokalny Qwen, jeżeli benchmark wykaże potrzebę.
@@ -185,4 +188,6 @@ Docelowo po zalogowaniu użytkownik będzie mógł dodawać wydatki, tworzyć ka
 9. Po zakończeniu OCR sprawdź, czy formularz automatycznie pokazuje rozpoznane dane.
 10. Zacznij edytować nazwę produktu i sprawdź, czy można wpisać cały tekst bez utraty fokusu oraz czy kolejne odświeżenie danych nie nadpisuje korekty.
 11. Usuń kategorię jednego produktu i sprawdź, czy zatwierdzenie jest zablokowane; różnica między sumą pozycji a sumą paragonu powinna pozostać tylko ostrzeżeniem.
-12. Dla statusu błędu sprawdź komunikat i brak akcji zatwierdzenia; dla zatwierdzonego paragonu sprawdź podgląd i jawną akcję edycji.
+12. Dla statusu błędu sprawdź komunikat i akcję „Popraw ręcznie”; zapisz kompletną korektę, potwierdź przejście do „Do weryfikacji” i dopiero wtedy zatwierdź paragon.
+13. Anuluj ręczną korektę błędnego paragonu i sprawdź, że dane nie zostały zapisane ani zatwierdzone.
+14. Dla zatwierdzonego paragonu sprawdź podgląd i jawną akcję edycji.

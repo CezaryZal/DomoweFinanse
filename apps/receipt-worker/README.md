@@ -38,9 +38,21 @@ Uzupełnij `.env`:
 ```env
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_SECRET_KEY=<secret-key-for-trusted-local-worker>
+RECEIPT_WORKER_MAX_ATTEMPTS=3
+RECEIPT_WORKER_LEASE_SECONDS=900
 ```
 
 Sekretnego klucza nie wolno umieszczać w frontendzie, dokumentacji ani repozytorium.
+
+`RECEIPT_WORKER_MAX_ATTEMPTS` jest ograniczane do zakresu 1–10 zgodnego ze schematem bazy. `RECEIPT_WORKER_LEASE_SECONDS` określa, przez ile sekund worker jest właścicielem zadania; dozwolony zakres to 60–3600, a wartość domyślna to 900 sekund.
+
+## Odporność kolejki
+
+Worker pobiera zadanie przez atomową funkcję Supabase. Równoległe procesy nie mogą zarezerwować tego samego zadania, a zadanie pozostawione w stanie `processing` po awarii może zostać przejęte po wygaśnięciu lease. Każda próba ma własny numer używany jako token odgradzający, dlatego spóźniony wynik starszej próby nie nadpisze nowszego przetwarzania.
+
+Zakończenie i niepowodzenie zadania są zapisywane transakcyjnie przez funkcje RPC. Zapis pozycji, danych paragonu i stanu kolejki albo kończy się w całości, albo jest wycofywany w całości. Po wyczerpaniu prób paragon przechodzi do `failed` i może zostać uzupełniony ręcznie w aplikacji; nie uruchamia to automatycznie kolejnego OCR.
+
+Przy wdrażaniu tej wersji zatrzymaj starsze procesy workera, zastosuj migrację `20260719140940_add_receipt_worker_leases.sql`, a dopiero potem uruchom nowy kod. Wszystkie równoległe workery muszą mieć tę samą wartość `RECEIPT_WORKER_MAX_ATTEMPTS`, ponieważ limit prób jest przekazywany do funkcji kolejki przez proces workera.
 
 ## Uruchomienie
 
