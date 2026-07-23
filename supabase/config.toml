@@ -1,0 +1,4 @@
+[functions.analyze-receipt-gemini]
+# Browser preflight must reach the handler. The handler validates the signed-in
+# user through Auth before starting the user-scoped RPC.
+verify_jwt = false

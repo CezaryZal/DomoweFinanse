@@ -11,10 +11,12 @@ receipt_worker/
     paddle/               # PP-OCRv5, OpenCV i fallback
   parsers/
     rules/                # reguły: linie OCR -> ParsedReceipt
+  analysis/
+    gemini/               # Gemini API: obraz -> ParsedReceipt
   main.py                 # kolejka i orkiestracja
 ```
 
-Nowy silnik AI powinien implementować `ReceiptTextRecognizer` albo zwracać ten sam wynik `ParsedReceipt` przez osobny parser. Nie należy dopisywać logiki AI do `recognition/paddle/` ani zmieniać parsera regułowego bez osobnego benchmarku. Moduły `ocr_engine.py` i `parser.py` pozostają tylko kompatybilnymi eksportami dla starszych importów i testów.
+Nowy silnik AI powinien implementować `ReceiptTextRecognizer` albo zwracać ten sam wynik `ParsedReceipt` przez osobny analizator. Gemini działa według drugiego wariantu: otrzymuje obraz i zwraca ustrukturyzowany wynik do ręcznej weryfikacji. Nie należy dopisywać logiki AI do `recognition/paddle/` ani zmieniać parsera regułowego bez osobnego benchmarku. Moduły `ocr_engine.py` i `parser.py` pozostają tylko kompatybilnymi eksportami dla starszych importów i testów.
 
 Worker pobiera zadania z Supabase, pobiera zdjęcia z prywatnego bucketu `receipt-images`, przygotowuje kilka wariantów obrazu przez OpenCV i uruchamia polski model PP-OCRv5 przez PaddleOCR. Wynik jest parsowany regułami i zawsze trafia do ręcznej weryfikacji w aplikacji.
 
@@ -33,6 +35,8 @@ W głównym `.env.local` pozostają zmienne frontendu `VITE_SUPABASE_URL` oraz `
 
 ```env
 SUPABASE_SECRET_KEY=sb_secret_...
+GEMINI_API_KEY=<google-ai-studio-api-key>
+# Opcjonalnie: GEMINI_MODEL=gemini-3.5-flash
 ```
 
 Sekret nie jest wystawiany do przeglądarki, ponieważ Vite udostępnia tylko zmienne zaczynające się od `VITE_`.
@@ -59,6 +63,8 @@ RECEIPT_WORKER_LEASE_SECONDS=900
 ```
 
 Sekretnego klucza nie wolno umieszczać w frontendzie, dokumentacji ani repozytorium.
+
+`GEMINI_API_KEY` nie może zaczynać się od `VITE_`; worker odczytuje go z głównego `.env.local` przed plikiem `apps/receipt-worker/.env`. Wybierz w aplikacji Ustawienia → parser „Model AI — Gemini 3.5”, a nowe zadania będą analizowane przez Gemini. Ten wariant przekazuje prywatne zdjęcie paragonu do Google Gemini API i nadal wymaga ręcznego sprawdzenia wyniku. Bez wybranego wariantu Gemini worker pozostaje lokalnym PaddleOCR.
 
 `RECEIPT_WORKER_MAX_ATTEMPTS` jest ograniczane do zakresu 1–10 zgodnego ze schematem bazy. `RECEIPT_WORKER_LEASE_SECONDS` określa, przez ile sekund worker jest właścicielem zadania; dozwolony zakres to 60–3600, a wartość domyślna to 900 sekund.
 

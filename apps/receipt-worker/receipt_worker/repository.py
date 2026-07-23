@@ -62,7 +62,7 @@ class ReceiptRepository:
     def download_image(self, storage_path: str) -> bytes:
         return self.client.storage.from_(RECEIPT_BUCKET).download(storage_path)
 
-    def complete_job(self, job: dict[str, Any], parsed: ParsedReceipt) -> None:
+    def complete_job(self, job: dict[str, Any], parsed: ParsedReceipt, *, parser_version: str = PARSER_VERSION) -> None:
         items = [
             {
                 "line_number": item.line_number,
@@ -88,7 +88,7 @@ class ReceiptRepository:
                 "p_confidence": parsed.confidence,
                 "p_raw_ocr": {"lines": [line.as_dict() for line in parsed.raw_lines]},
                 "p_validation_errors": parsed.validation_errors,
-                "p_parser_version": PARSER_VERSION,
+                "p_parser_version": parser_version,
                 "p_items": items,
             },
         ).execute().data

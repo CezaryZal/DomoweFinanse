@@ -17,6 +17,8 @@ class Settings:
     max_attempts: int
     lease_seconds: int
     worker_id: str
+    gemini_api_key: str | None
+    gemini_model: str
 
     @classmethod
     def from_env(
@@ -54,4 +56,6 @@ class Settings:
             max_attempts=min(10, max(1, int(value("RECEIPT_WORKER_MAX_ATTEMPTS", default="3")))),
             lease_seconds=min(3600, max(60, int(value("RECEIPT_WORKER_LEASE_SECONDS", default="900")))),
             worker_id=value("RECEIPT_WORKER_ID") or f"{socket.gethostname()}-{os.getpid()}",
+            gemini_api_key=value("GEMINI_API_KEY") or None,
+            gemini_model=value("GEMINI_MODEL", default="gemini-3.5-flash"),
         )

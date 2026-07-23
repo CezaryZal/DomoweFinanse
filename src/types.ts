@@ -26,7 +26,9 @@ export type Feedback = {
 
 export type ReceiptParserVariant = 'rules' | 'qwen' | 'gemini'
 
-export type ReceiptStatus = 'uploading' | 'queued' | 'processing' | 'needs_review' | 'approved' | 'failed'
+export type ReceiptAnalysisMethod = 'ocr' | 'gemini'
+
+export type ReceiptStatus = 'uploading' | 'ready_for_analysis' | 'queued' | 'processing' | 'needs_review' | 'approved' | 'failed'
 
 export type ReceiptItem = {
   id: string
@@ -53,6 +55,7 @@ export type Receipt = {
   expenseId: string | null
   categoryId: string | null
   status: ReceiptStatus
+  analysisMethod: ReceiptAnalysisMethod
   storagePath: string
   originalFilename: string
   merchant: string | null

@@ -64,8 +64,8 @@ function App() {
       {view === 'dashboard' && <Dashboard expenses={expenses} categories={categories} total={total} categoryTotals={categoryTotals} onNavigate={setView} onAddExpense={openNewExpense} onOpenReceipt={(id) => { setExpandedReceiptId(id); setView('expenses') }} />}
       {view === 'expenses' && <ExpensesPage expenses={expenses} categories={categories} expandedReceiptId={expandedReceiptId} onOpenReceipt={(id) => setExpandedReceiptId(id)} onAdd={openNewExpense} onDelete={(id) => void removeExpense(id)} onEdit={openExpenseEditor} />}
       {view === 'categories' && <CategoriesPage categories={categories} categoryTotals={categoryTotals} onAdd={openNewCategory} onEdit={openCategoryEditor} />}
-      {view === 'receipts' && <ReceiptsPage userId={session.user.id} categories={categories} onExpenseCreated={() => void refreshExpenses()} />}
-      {view === 'settings' && <SettingsPage initialVariant={parserVariant} isSaving={isSaving} onSave={(variant) => void saveParserVariant(variant)} />}
+      {view === 'receipts' && <ReceiptsPage userId={session.user.id} categories={categories} parserVariant={parserVariant} onExpenseCreated={() => void refreshExpenses()} />}
+      {view === 'settings' && <SettingsPage initialVariant={parserVariant} onSave={saveParserVariant} />}
     </main>
     {isExpenseOpen && <ExpenseModal key={editingExpense?.id ?? 'new-expense'} categories={categories} initialExpense={editingExpense} isSaving={isSaving} onClose={closeExpenseModal} onSubmit={(expense) => void submitExpense(expense)} />}
     {isCategoryOpen && <CategoryModal key={editingCategory?.id ?? 'new-category'} initialCategory={editingCategory} isSaving={isSaving} onClose={closeCategoryModal} onSubmit={(category) => void submitCategory(category)} />}
@@ -116,7 +116,8 @@ function App() {
   }
 
   async function saveParserVariant(variant: ReceiptParserVariant) {
-    try { await saveReceiptParserVariant(session!.user.id, variant); setParserVariant(variant) } catch { /* Feedback remains available for future settings-specific errors. */ }
+    const savedVariant = await saveReceiptParserVariant(session!.user.id, variant)
+    setParserVariant(savedVariant)
   }
 }
 

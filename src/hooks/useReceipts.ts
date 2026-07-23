@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { approveReceipt, createReceiptImageUrl, deleteReceipt, deleteReceiptImage, listReceipts, updateReceiptReview, uploadReceipt } from '../lib/receipts'
-import type { Feedback, Receipt, ReceiptReview } from '../types'
+import { analyzeReceiptWithGemini, approveReceipt, createReceiptImageUrl, deleteReceipt, deleteReceiptImage, listReceipts, updateReceiptReview, uploadReceipt } from '../lib/receipts'
+import type { Feedback, Receipt, ReceiptParserVariant, ReceiptReview } from '../types'
 
-export function useReceipts(userId: string, onExpenseCreated: () => void) {
+export function useReceipts(userId: string, onExpenseCreated: () => void, parserVariant: ReceiptParserVariant) {
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const imageUrlsRef = useRef<Record<string, string>>({})
@@ -47,7 +47,12 @@ export function useReceipts(userId: string, onExpenseCreated: () => void) {
     setFeedback(null)
     try {
       await uploadReceipt(userId, file)
-      setFeedback({ type: 'success', message: 'Zdjęcie zapisano. Paragon czeka na lokalnego workera OCR.' })
+      setFeedback({
+        type: 'success',
+        message: parserVariant === 'gemini'
+          ? 'Zdjęcie zapisano. Kliknij „Analizuj przez Gemini”, aby rozpocząć analizę.'
+          : 'Zdjęcie zapisano i dodano do kolejki OCR.',
+      })
       await refresh(false)
     } catch (error) {
       setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się przesłać zdjęcia.' })
@@ -67,6 +72,26 @@ export function useReceipts(userId: string, onExpenseCreated: () => void) {
       return true
     } catch (error) {
       setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się zapisać korekty.' })
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function analyzeWithGemini(receiptId: string) {
+    setSaving(true)
+    setFeedback(null)
+    setReceipts((current) => current.map((receipt) => receipt.id === receiptId
+      ? { ...receipt, status: 'processing', jobStatus: 'processing', processingError: null }
+      : receipt))
+    try {
+      await analyzeReceiptWithGemini(receiptId)
+      setFeedback({ type: 'success', message: 'Gemini zakończył analizę. Sprawdź wynik przed zatwierdzeniem.' })
+      await refresh(false)
+      return true
+    } catch (error) {
+      await refresh(false)
+      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się uruchomić analizy Gemini.' })
       return false
     } finally {
       setSaving(false)
@@ -115,5 +140,5 @@ export function useReceipts(userId: string, onExpenseCreated: () => void) {
     }
   }
 
-  return { receipts, imageUrls, isLoading, isSaving, feedback, upload, saveReview, approve, remove, clearFeedback: () => setFeedback(null) }
+  return { receipts, imageUrls, isLoading, isSaving, feedback, upload, analyzeWithGemini, saveReview, approve, remove, clearFeedback: () => setFeedback(null) }
 }

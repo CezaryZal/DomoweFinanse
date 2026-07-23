@@ -1,9 +1,10 @@
 import { supabase } from './supabase'
-import type { Receipt, ReceiptItem, ReceiptReview, ReceiptStatus } from '../types'
+import type { Receipt, ReceiptAnalysisMethod, ReceiptItem, ReceiptReview, ReceiptStatus } from '../types'
 
 export const RECEIPT_BUCKET = 'receipt-images'
 export const RECEIPT_MAX_SIZE = 10 * 1024 * 1024
 export const RECEIPT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
+const GEMINI_ANALYSIS_TIMEOUT_MS = 75_000
 
 type ReceiptItemRow = {
   id: string
@@ -27,6 +28,7 @@ type ReceiptRow = {
   expense_id: string | null
   category_id: string | null
   status: ReceiptStatus
+  analysis_method: ReceiptAnalysisMethod
   storage_path: string
   original_filename: string
   merchant: string | null
@@ -70,6 +72,7 @@ function mapReceipt(row: ReceiptRow): Receipt {
     expenseId: row.expense_id,
     categoryId: row.category_id,
     status: row.status,
+    analysisMethod: row.analysis_method,
     storagePath: row.storage_path,
     originalFilename: row.original_filename,
     merchant: row.merchant,
@@ -106,11 +109,25 @@ function extensionForMimeType(mimeType: string): string {
   return 'jpg'
 }
 
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: number | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+  }
+}
+
 export async function listReceipts(userId: string): Promise<Receipt[]> {
   const { data, error } = await supabase
     .from('receipts')
     .select(`
-      id, expense_id, category_id, status, storage_path, original_filename, merchant, purchased_at,
+      id, expense_id, category_id, status, analysis_method, storage_path, original_filename, merchant, purchased_at,
       total_amount, currency, confidence, validation_errors, parser_version, created_at,
       receipt_items (id, category_id, line_number, name, quantity, unit_price, total_price, confidence, source_text),
       receipt_processing_jobs (status, error_message)
@@ -190,6 +207,33 @@ export async function deleteReceipt(receiptId: string): Promise<string> {
   const { data, error } = await supabase.rpc('delete_receipt', { p_receipt_id: receiptId })
   if (error) throw error
   return data as string
+}
+
+export async function analyzeReceiptWithGemini(receiptId: string): Promise<string> {
+  const invocation = supabase.functions.invoke('analyze-receipt-gemini', {
+    body: { receiptId },
+  })
+  const { data, error } = await withTimeout(
+    invocation,
+    GEMINI_ANALYSIS_TIMEOUT_MS,
+    'Analiza Gemini trwa zbyt długo. Spróbuj ponownie za chwilę.',
+  )
+
+  if (error) {
+    if (error.context instanceof Response) {
+      const payload: unknown = await error.context.json().catch(() => null)
+      if (payload && typeof payload === 'object' && 'message' in payload && typeof payload.message === 'string') {
+        throw new Error(payload.message)
+      }
+    }
+    throw error
+  }
+
+  if (!data || typeof data !== 'object' || !('receiptId' in data) || typeof data.receiptId !== 'string') {
+    throw new Error('Gemini zwrócił niepoprawną odpowiedź.')
+  }
+
+  return data.receiptId
 }
 
 export async function deleteReceiptImage(storagePath: string) {

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   useReceipts: vi.fn(),
   saveReview: vi.fn(),
   approve: vi.fn(),
+  analyzeWithGemini: vi.fn(),
 }))
 
 vi.mock('../../hooks/useReceipts', () => ({
@@ -21,6 +22,7 @@ function makeReceipt(overrides: Partial<Receipt> = {}): Receipt {
     expenseId: null,
     categoryId: null,
     status: 'needs_review',
+    analysisMethod: 'ocr',
     storagePath: 'user/receipt.jpg',
     originalFilename: 'paragon.jpg',
     merchant: 'Sklep testowy',
@@ -46,6 +48,7 @@ function receiptApi(receipts: Receipt[]) {
     isSaving: false,
     feedback: null,
     upload: vi.fn(),
+    analyzeWithGemini: mocks.analyzeWithGemini,
     saveReview: mocks.saveReview,
     approve: mocks.approve,
     remove: vi.fn(),
@@ -53,8 +56,8 @@ function receiptApi(receipts: Receipt[]) {
   }
 }
 
-function page() {
-  return <ReceiptsPage userId="user-1" categories={categories} onExpenseCreated={vi.fn()} />
+function page(parserVariant: 'rules' | 'qwen' | 'gemini' = 'rules') {
+  return <ReceiptsPage userId="user-1" categories={categories} parserVariant={parserVariant} onExpenseCreated={vi.fn()} />
 }
 
 describe('ReceiptsPage', () => {
@@ -64,6 +67,7 @@ describe('ReceiptsPage', () => {
     vi.clearAllMocks()
     mocks.saveReview.mockResolvedValue(true)
     mocks.approve.mockResolvedValue(true)
+    mocks.analyzeWithGemini.mockResolvedValue(true)
   })
 
   it('collapses an approved receipt and expands it for details and editing', () => {
@@ -102,6 +106,35 @@ describe('ReceiptsPage', () => {
     expect(screen.getByDisplayValue('Mleko')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /zapisz korektę/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /zatwierdź jako wydatek/i })).toBeEnabled()
+  })
+
+  it('shows Gemini analysis only for a new, not yet analyzed receipt when Gemini is selected', async () => {
+    mocks.useReceipts.mockReturnValue(receiptApi([makeReceipt({ analysisMethod: 'gemini', status: 'ready_for_analysis', merchant: null, purchasedAt: null, totalAmount: null, jobStatus: null, items: [] })]))
+    render(page('gemini'))
+
+    expect(screen.getByText('Gotowy do analizy Gemini')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /analizuj przez gemini/i }))
+    await waitFor(() => expect(mocks.analyzeWithGemini).toHaveBeenCalledWith('receipt-1'))
+  })
+
+  it('hides Gemini analysis when the selected parser is not Gemini', () => {
+    mocks.useReceipts.mockReturnValue(receiptApi([makeReceipt({ analysisMethod: 'gemini', status: 'ready_for_analysis', merchant: null, purchasedAt: null, totalAmount: null, jobStatus: null, items: [] })]))
+    render(page('rules'))
+
+    expect(screen.queryByRole('button', { name: /analizuj przez gemini/i })).not.toBeInTheDocument()
+  })
+
+  it('uses Gemini labels after a Gemini receipt is queued without changing OCR labels', () => {
+    mocks.useReceipts.mockReturnValue(receiptApi([
+      makeReceipt({ id: 'gemini-1', analysisMethod: 'gemini', status: 'queued', merchant: null, purchasedAt: null, totalAmount: null, jobStatus: 'pending', items: [] }),
+      makeReceipt({ id: 'ocr-1', analysisMethod: 'ocr', status: 'queued', merchant: null, purchasedAt: null, totalAmount: null, jobStatus: 'pending', items: [] }),
+    ]))
+    render(page('gemini'))
+
+    expect(screen.getByText('Gotowy do analizy Gemini')).toBeInTheDocument()
+    expect(screen.getByText('Oczekuje na OCR')).toBeInTheDocument()
+    expect(screen.getByText('Dodaj zdjęcie do analizy Gemini')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Analizuj przez Gemini' })).toBeInTheDocument()
   })
 
   it('does not overwrite a draft changed by the user during polling', () => {

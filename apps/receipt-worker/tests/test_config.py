@@ -31,6 +31,24 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.poll_seconds, 9)
         self.assertEqual(settings.max_attempts, 3)
         self.assertEqual(settings.lease_seconds, 900)
+        self.assertIsNone(settings.gemini_api_key)
+        self.assertEqual(settings.gemini_model, "gemini-3.5-flash")
+
+    def test_reads_gemini_configuration_from_project_env_local(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.local").write_text(
+                "VITE_SUPABASE_URL=https://project.supabase.co\n"
+                "SUPABASE_SECRET_KEY=project-secret\n"
+                "GEMINI_API_KEY=local-gemini-key\n"
+                "GEMINI_MODEL=gemini-test-model\n",
+                encoding="utf-8",
+            )
+
+            settings = Settings.from_env(root, root / "worker", environment={})
+
+        self.assertEqual(settings.gemini_api_key, "local-gemini-key")
+        self.assertEqual(settings.gemini_model, "gemini-test-model")
 
     def test_process_environment_has_highest_priority(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

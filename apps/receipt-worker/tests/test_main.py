@@ -54,6 +54,8 @@ def worker_settings() -> Settings:
         max_attempts=3,
         lease_seconds=900,
         worker_id="worker-1",
+        gemini_api_key=None,
+        gemini_model="gemini-3.5-flash",
     )
 
 
@@ -101,3 +103,25 @@ class ReceiptWorkerLeaseTests(TestCase):
 
         self.assertTrue(worker.process_once())
         repository.fail_job.assert_called_once()
+
+    @patch("receipt_worker.main.GeminiReceiptAnalyzer")
+    @patch("receipt_worker.main.PaddleReceiptRecognizer")
+    @patch("receipt_worker.main.ReceiptRepository")
+    def test_gemini_job_uses_gemini_analyzer_and_persists_its_version(self, repository_class, _ocr_class, analyzer_class) -> None:
+        repository = repository_class.return_value
+        job = claimed_job()
+        job["parser_variant"] = "gemini"
+        repository.claim_next_job.return_value = job
+        repository.download_image.return_value = b"image"
+        settings = worker_settings()
+        settings = Settings(**{**settings.__dict__, "gemini_api_key": "test-key"})
+        parsed = parsed_receipt(total=Decimal("5.00"), has_items=True)
+        analyzer = analyzer_class.return_value
+        analyzer.analyse.return_value = parsed
+        analyzer.parser_version = "gemini-test-model"
+
+        worker = ReceiptWorker(settings)
+        self.assertTrue(worker.process_once())
+
+        analyzer.analyse.assert_called_once()
+        repository.complete_job.assert_called_once_with(job, parsed, parser_version="gemini-test-model")

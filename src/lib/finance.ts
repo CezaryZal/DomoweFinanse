@@ -1,6 +1,12 @@
 import { supabase } from './supabase'
 import type { Category, Expense, ReceiptParserVariant } from '../types'
 
+const receiptParserVariants: ReceiptParserVariant[] = ['rules', 'qwen', 'gemini']
+
+function isReceiptParserVariant(value: string | null | undefined): value is ReceiptParserVariant {
+  return value !== undefined && value !== null && receiptParserVariants.includes(value as ReceiptParserVariant)
+}
+
 type CategoryRow = { id: string; name: string; color: string; icon: string }
 type ExpenseRow = {
   id: string
@@ -141,10 +147,17 @@ export async function deleteExpense(userId: string, expenseId: string) {
 export async function getReceiptParserVariant(userId: string): Promise<ReceiptParserVariant> {
   const { data, error } = await supabase.from('user_receipt_settings').select('parser_variant').eq('user_id', userId).maybeSingle()
   if (error) throw error
-  return (data?.parser_variant as ReceiptParserVariant | undefined) ?? 'rules'
+  return isReceiptParserVariant(data?.parser_variant) ? data.parser_variant : 'rules'
 }
 
-export async function saveReceiptParserVariant(userId: string, parserVariant: ReceiptParserVariant) {
-  const { error } = await supabase.from('user_receipt_settings').upsert({ user_id: userId, parser_variant: parserVariant, updated_at: new Date().toISOString() })
+export async function saveReceiptParserVariant(userId: string, parserVariant: ReceiptParserVariant): Promise<ReceiptParserVariant> {
+  if (!isReceiptParserVariant(parserVariant)) throw new Error('Wybrano nieobsługiwany parser paragonów.')
+  const { data, error } = await supabase
+    .from('user_receipt_settings')
+    .upsert({ user_id: userId, parser_variant: parserVariant, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    .select('parser_variant')
+    .single()
   if (error) throw error
+  if (!isReceiptParserVariant(data?.parser_variant)) throw new Error('Nie udało się potwierdzić zapisu ustawienia parsera.')
+  return data.parser_variant
 }

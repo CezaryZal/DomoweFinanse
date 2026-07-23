@@ -1,6 +1,6 @@
 # Domowe Finanse
 
-> Worker paragonów jest rozdzielony na rozpoznawanie PaddleOCR i parser regułowy. Kolejne modele AI będą dodawane jako osobne silniki, bez modyfikowania `recognition/paddle/`.
+> Worker paragonów jest rozdzielony na rozpoznawanie PaddleOCR i parser regułowy. Wariant Gemini jest osobnym analizatorem obrazu, bez modyfikowania `recognition/paddle/`.
 
 Prywatna aplikacja webowa do monitorowania wydatków gospodarstwa domowego. Docelowo umożliwi ręczne dodawanie wydatków, analizę zdjęć paragonów, kategoryzację wspomaganą przez AI oraz wspólny dostęp członków gospodarstwa.
 
@@ -17,6 +17,7 @@ Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 - dashboard z wydatkami i kategoriami pobieranymi z bazy;
 - prywatne przesyłanie i wyświetlanie zdjęć paragonów;
 - kolejka zadań OCR i lokalny worker Python z PaddleOCR;
+- eksperymentalny wariant Gemini API wybierany w ustawieniach paragonów; analiza jest wykonywana automatycznie przez Supabase Edge Function;
 - jawne stany obsługi paragonu w interfejsie: oczekiwanie, przetwarzanie, weryfikacja, błąd i zatwierdzenie;
 - automatyczne pokazanie wyniku OCR po zakończeniu przetwarzania bez nadpisywania rozpoczętej ręcznej korekty;
 - ręczna korekta wyniku OCR w stanach „Do weryfikacji” oraz „Błąd OCR”; zapis kompletnej korekty po błędzie przenosi paragon do stanu „Do weryfikacji”;
@@ -26,7 +27,7 @@ Zrealizowana jest pierwsza wersja frontendowa oraz moduł uwierzytelniania:
 - kolorowe tagi kategorii dla ręcznych wydatków i paragonów oraz podsumowania kategorii w zwiniętym widoku paragonu;
 - podstawowy responsywny interfejs zgodny z projektem graficznym.
 
-Wydatki, kategorie i metadane paragonów są przechowywane w Supabase Postgres. Zdjęcia trafiają do prywatnego bucketu Supabase Storage, a ciężkie przetwarzanie obrazu wykonuje lokalny worker Python.
+Wydatki, kategorie i metadane paragonów są przechowywane w Supabase Postgres. Zdjęcia trafiają do prywatnego bucketu Supabase Storage. OCR wykonuje lokalny worker Python, a analiza Gemini jest osobnym procesem w Supabase Edge Functions.
 
 ## Design i makiety
 
@@ -114,12 +115,20 @@ Worker znajduje się w katalogu `apps/receipt-worker`. Wykorzystuje Python 3.11,
 
 Worker wymaga lokalnego sekretnego klucza Supabase. Klucz służy wyłącznie zaufanemu procesowi backendowemu i nie może trafić do zmiennych `VITE_*`, frontendu ani repozytorium.
 
+Worker Python nie obsługuje wariantu Gemini. Jest przeznaczony wyłącznie do lokalnego OCR przez PaddleOCR.
+
+### Automatyczna analiza Gemini
+
+Po wybraniu w ustawieniach wariantu „Model AI — Gemini 3.5” nowy paragon oczekuje na kliknięcie „Analizuj przez Gemini”. Aplikacja wywołuje wtedy chronioną Supabase Edge Function `analyze-receipt-gemini`, która pobiera prywatne zdjęcie, wysyła je do Gemini API i zwraca wynik do ręcznej weryfikacji. Lokalny worker Python nie jest wymagany.
+
+W Supabase Dashboard dodaj sekret Edge Function `GEMINI_API_KEY` (oraz opcjonalnie `GEMINI_MODEL=gemini-3.5-flash`). Nie umieszczaj tych wartości w `VITE_*`, frontendzie ani repozytorium. Darmowy plan Google AI Studio ma limity i może podlegać odrębnym zasadom przetwarzania danych — nie wybieraj tego wariantu dla zdjęć, których nie chcesz przekazywać do Google.
+
 Przepływ paragonu:
 
 1. Użytkownik dodaje zdjęcie JPEG, PNG lub WebP do 10 MB.
 2. Zdjęcie trafia do prywatnego bucketu `receipt-images`.
-3. Powstaje zadanie w `receipt_processing_jobs`; interfejs pokazuje oczekiwanie i blokuje korektę oraz zatwierdzanie.
-4. Lokalny worker atomowo rezerwuje zadanie na ograniczony czas, pobiera obraz i wykonuje OCR, a interfejs pokazuje stan przetwarzania.
+3. Dla OCR powstaje zadanie w `receipt_processing_jobs`; lokalny worker atomowo rezerwuje je na ograniczony czas, pobiera obraz i wykonuje OCR.
+4. Dla Gemini użytkownik uruchamia analizę przyciskiem; Supabase Edge Function samodzielnie pobiera obraz oraz wywołuje Gemini API, bez lokalnego workera.
 5. Po zapisaniu propozycji OCR paragon przechodzi do stanu „Do weryfikacji”, a formularz automatycznie pokazuje rozpoznane dane.
 6. Użytkownik może poprawić sklep, datę, kwotę i pozycje. Kolejne odświeżenie danych nie nadpisuje rozpoczętej korekty.
 7. Zatwierdzenie jest możliwe po przypisaniu kategorii do każdego produktu i tworzy wydatek ze źródłem `receipt`.

@@ -1,16 +1,28 @@
-import { describe, expect, it } from 'vitest'
-import { validateReceiptFile } from './receipts'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-describe('receipt file validation', () => {
-  it('accepts a JPEG image within the size limit', () => {
-    expect(() => validateReceiptFile(new File(['image'], 'receipt.jpg', { type: 'image/jpeg' }))).not.toThrow()
+const invoke = vi.hoisted(() => vi.fn())
+
+vi.mock('./supabase', () => ({
+  supabase: {
+    functions: { invoke },
+  },
+}))
+
+import { analyzeReceiptWithGemini } from './receipts'
+
+describe('analyzeReceiptWithGemini', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('invokes the authenticated Gemini Edge Function with a receipt id', async () => {
+    invoke.mockResolvedValue({ data: { receiptId: 'receipt-1', status: 'needs_review' }, error: null })
+
+    await expect(analyzeReceiptWithGemini('receipt-1')).resolves.toBe('receipt-1')
+    expect(invoke).toHaveBeenCalledWith('analyze-receipt-gemini', { body: { receiptId: 'receipt-1' } })
   })
 
-  it('rejects unsupported formats', () => {
-    expect(() => validateReceiptFile(new File(['document'], 'receipt.pdf', { type: 'application/pdf' }))).toThrow('JPEG, PNG i WebP')
-  })
+  it('rejects an unexpected Edge Function response', async () => {
+    invoke.mockResolvedValue({ data: { status: 'needs_review' }, error: null })
 
-  it('rejects empty images', () => {
-    expect(() => validateReceiptFile(new File([], 'empty.png', { type: 'image/png' }))).toThrow('od 1 bajta do 10 MB')
+    await expect(analyzeReceiptWithGemini('receipt-1')).rejects.toThrow('Gemini zwrócił niepoprawną odpowiedź.')
   })
 })

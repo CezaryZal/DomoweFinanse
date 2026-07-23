@@ -8,8 +8,9 @@ from pathlib import Path
 
 from .config import Settings
 from .models import ParsedReceipt
+from .analysis.gemini import GeminiReceiptAnalyzer
 from .recognition.paddle import PaddleReceiptRecognizer, crop_to_text_content, preprocess_images
-from .parsers.rules import parse_receipt, select_best_parse
+from .parsers.rules import PARSER_VERSION, parse_receipt, select_best_parse
 from .repository import ReceiptRepository, StaleJobLeaseError
 
 LOGGER = logging.getLogger("receipt-worker")
@@ -32,11 +33,53 @@ class ReceiptWorker:
         )
         self.ocr = PaddleReceiptRecognizer()
         self.flat_ocr: PaddleReceiptRecognizer | None = None
+        self.gemini: GeminiReceiptAnalyzer | None = None
 
     def flat_ocr_engine(self) -> PaddleReceiptRecognizer:
         if self.flat_ocr is None:
             self.flat_ocr = PaddleReceiptRecognizer(use_document_recovery=False)
         return self.flat_ocr
+
+    def gemini_analyzer(self) -> GeminiReceiptAnalyzer:
+        if self.gemini is None:
+            self.gemini = GeminiReceiptAnalyzer(
+                api_key=self.settings.gemini_api_key or "",
+                model=self.settings.gemini_model,
+            )
+        return self.gemini
+
+    def parse_with_paddle(self, source: Path, directory: Path, receipt_id: str) -> ParsedReceipt:
+        candidates = []
+        for prepared in preprocess_images(source, directory):
+            try:
+                lines = self.ocr.recognise(prepared)
+            except Exception:
+                LOGGER.exception("Błąd OCR dla wariantu obrazu %s", prepared.name)
+                continue
+            if lines:
+                candidates.append(parse_receipt(lines))
+
+        if not candidates:
+            raise RuntimeError("PaddleOCR nie zwrócił żadnego tekstu z dostępnych wariantów obrazu.")
+        best_candidate = select_best_parse(candidates)
+        if needs_flat_ocr_fallback(best_candidate):
+            try:
+                fallback_lines = self.flat_ocr_engine().recognise(source)
+            except Exception:
+                LOGGER.exception("Fallback OCR failed for receipt %s", receipt_id)
+            else:
+                if fallback_lines:
+                    candidates.append(parse_receipt(fallback_lines))
+                    cropped_source = crop_to_text_content(source, fallback_lines, directory / "prepared-flat-crop.png")
+                    if cropped_source is not None:
+                        try:
+                            cropped_lines = self.flat_ocr_engine().recognise(cropped_source)
+                        except Exception:
+                            LOGGER.exception("Cropped fallback OCR failed for receipt %s", receipt_id)
+                        else:
+                            if cropped_lines:
+                                candidates.append(parse_receipt(cropped_lines))
+        return select_best_parse(candidates)
 
     def process_once(self) -> bool:
         job = self.repository.claim_next_job()
@@ -45,7 +88,7 @@ class ReceiptWorker:
 
         receipt = job["receipt"]
         parser_variant = job.get("parser_variant", "rules")
-        if parser_variant != "rules":
+        if parser_variant not in {"rules", "gemini"}:
             LOGGER.warning("Parser %s nie jest jeszcze skonfigurowany; używam PaddleOCR + reguły", parser_variant)
         LOGGER.info("Przetwarzanie paragonu %s, próba %s", receipt["id"], job["attempts"])
         try:
@@ -54,41 +97,14 @@ class ReceiptWorker:
                 source_suffix = Path(receipt["storage_path"]).suffix or ".jpg"
                 source = directory / f"source{source_suffix}"
                 source.write_bytes(self.repository.download_image(receipt["storage_path"]))
-                candidates = []
-                for prepared in preprocess_images(source, directory):
-                    try:
-                        lines = self.ocr.recognise(prepared)
-                    except Exception:
-                        LOGGER.exception("Błąd OCR dla wariantu obrazu %s", prepared.name)
-                        continue
-                    if lines:
-                        candidates.append(parse_receipt(lines))
-
-                if not candidates:
-                    raise RuntimeError("PaddleOCR nie zwrócił żadnego tekstu z dostępnych wariantów obrazu.")
-                best_candidate = select_best_parse(candidates)
-                if needs_flat_ocr_fallback(best_candidate):
-                    try:
-                        fallback_lines = self.flat_ocr_engine().recognise(source)
-                    except Exception:
-                        LOGGER.exception("Fallback OCR failed for receipt %s", receipt["id"])
-                    else:
-                        if fallback_lines:
-                            candidates.append(parse_receipt(fallback_lines))
-                            cropped_source = crop_to_text_content(
-                                source,
-                                fallback_lines,
-                                directory / "prepared-flat-crop.png",
-                            )
-                            if cropped_source is not None:
-                                try:
-                                    cropped_lines = self.flat_ocr_engine().recognise(cropped_source)
-                                except Exception:
-                                    LOGGER.exception("Cropped fallback OCR failed for receipt %s", receipt["id"])
-                                else:
-                                    if cropped_lines:
-                                        candidates.append(parse_receipt(cropped_lines))
-                self.repository.complete_job(job, select_best_parse(candidates))
+                if parser_variant == "gemini":
+                    analyzer = self.gemini_analyzer()
+                    parsed = analyzer.analyse(source)
+                    parser_version = analyzer.parser_version
+                else:
+                    parsed = self.parse_with_paddle(source, directory, receipt["id"])
+                    parser_version = PARSER_VERSION
+                self.repository.complete_job(job, parsed, parser_version=parser_version)
             LOGGER.info("Paragon %s oczekuje na weryfikację użytkownika", receipt["id"])
         except StaleJobLeaseError:
             LOGGER.warning("Lease zadania dla paragonu %s wygasł przed zapisem wyniku", receipt["id"])

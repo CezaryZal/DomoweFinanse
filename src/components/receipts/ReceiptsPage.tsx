@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Camera, Check, ChevronDown, ChevronUp, Pencil, Plus, Save, Trash2, Upload } from 'lucide-react'
+import { Camera, Check, ChevronDown, ChevronUp, Pencil, Plus, Save, Sparkles, Trash2, Upload } from 'lucide-react'
 import { FeedbackBanner } from '../common/FeedbackBanner'
 import { PageTitle } from '../common/PageTitle'
 import { useReceipts } from '../../hooks/useReceipts'
-import type { Category, Receipt, ReceiptItemDraft, ReceiptReview } from '../../types'
+import type { Category, Receipt, ReceiptAnalysisMethod, ReceiptItemDraft, ReceiptParserVariant, ReceiptReview } from '../../types'
 import { ReceiptImageModal } from './ReceiptImageModal'
 import { hasUncategorizedReceiptItems } from './receiptValidation'
 import './ReceiptsPage.css'
@@ -16,13 +16,28 @@ type ReceiptItemEditorDraft = ReceiptItemDraft & {
   sourceText: string | null
 }
 
-const receiptStatusCopy: Record<Receipt['status'], { label: string; message: string }> = {
-  uploading: { label: 'Przesyłanie', message: 'Kończenie zapisu zdjęcia paragonu.' },
-  queued: { label: 'Oczekuje na OCR', message: 'Paragon czeka na uruchomienie lokalnego workera OCR.' },
-  processing: { label: 'Analiza OCR', message: 'Worker rozpoznaje dane paragonu. Formularz pojawi się po zakończeniu analizy.' },
-  needs_review: { label: 'Do weryfikacji', message: 'Sprawdź rozpoznane dane i przypisz kategorię do każdego produktu.' },
-  approved: { label: 'Zatwierdzony', message: 'Paragon został zapisany jako wydatek.' },
-  failed: { label: 'Błąd OCR', message: 'Nie udało się przeanalizować paragonu.' },
+function receiptStatusCopy(status: Receipt['status'], method: ReceiptAnalysisMethod) {
+  const isGemini = method === 'gemini'
+
+  const copy: Record<Receipt['status'], { label: string; message: string }> = {
+    uploading: { label: 'Przesyłanie', message: 'Kończenie zapisu zdjęcia paragonu.' },
+    ready_for_analysis: { label: 'Gotowy do analizy Gemini', message: 'Kliknij „Analizuj przez Gemini”, aby rozpocząć analizę tego nowego paragonu.' },
+    queued: isGemini
+      ? { label: 'Gotowy do analizy Gemini', message: 'Kliknij „Analizuj przez Gemini”, aby rozpocząć analizę tego paragonu.' }
+      : { label: 'Oczekuje na OCR', message: 'Paragon czeka na uruchomienie lokalnego workera OCR.' },
+    processing: isGemini
+      ? { label: 'Gemini analizuje zdjęcie', message: 'Gemini rozpoznaje dane paragonu. Formularz pojawi się po zakończeniu analizy.' }
+      : { label: 'Analiza OCR', message: 'Worker rozpoznaje dane paragonu. Formularz pojawi się po zakończeniu analizy.' },
+    needs_review: isGemini
+      ? { label: 'Do weryfikacji', message: 'Sprawdź dane rozpoznane przez Gemini i przypisz kategorię do każdego produktu.' }
+      : { label: 'Do weryfikacji', message: 'Sprawdź rozpoznane dane i przypisz kategorię do każdego produktu.' },
+    approved: { label: 'Zatwierdzony', message: 'Paragon został zapisany jako wydatek.' },
+    failed: isGemini
+      ? { label: 'Błąd Gemini', message: 'Nie udało się przeanalizować paragonu przez Gemini.' }
+      : { label: 'Błąd OCR', message: 'Nie udało się przeanalizować paragonu.' },
+  }
+
+  return copy[status]
 }
 
 function buildItemDrafts(receipt: Receipt): ReceiptItemEditorDraft[] {
@@ -37,10 +52,12 @@ function buildItemDrafts(receipt: Receipt): ReceiptItemEditorDraft[] {
   }))
 }
 
-export function ReceiptsPage({ userId, categories, onExpenseCreated }: { userId: string; categories: Category[]; onExpenseCreated: () => void }) {
-  const api = useReceipts(userId, onExpenseCreated)
+export function ReceiptsPage({ userId, categories, parserVariant, onExpenseCreated }: { userId: string; categories: Category[]; parserVariant: ReceiptParserVariant; onExpenseCreated: () => void }) {
+  const api = useReceipts(userId, onExpenseCreated, parserVariant)
   const [preview, setPreview] = useState<{ filename: string; imageUrl: string } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Receipt | null>(null)
+  const usesGemini = parserVariant === 'gemini'
+  const uploadLabel = usesGemini ? 'Dodaj zdjęcie do analizy Gemini' : 'Dodaj zdjęcie'
 
   function selectFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -49,20 +66,23 @@ export function ReceiptsPage({ userId, categories, onExpenseCreated }: { userId:
   }
 
   return <div className="page receipt-workspace">
-    <PageTitle title="Weryfikacja OCR" subtitle="Paragony" action={<label className="button primary receipt-upload-button"><Upload size={17} />Dodaj zdjęcie<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} /></label>} />
+    <PageTitle title={usesGemini ? 'Analiza Gemini' : 'Weryfikacja OCR'} subtitle="Paragony" action={<label className="button primary receipt-upload-button"><Upload size={17} />{uploadLabel}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} /></label>} />
     <FeedbackBanner feedback={api.feedback} error="" onDismiss={api.clearFeedback} />
     {api.isLoading ? <p className="receipt-loading">Pobieranie paragonów…</p> : api.receipts.length ? <div className="receipt-review-list">
-      {api.receipts.map((receipt) => <ReceiptCard key={receipt.id} receipt={receipt} imageUrl={api.imageUrls[receipt.id]} categories={categories} isSaving={api.isSaving} onPreview={(imageUrl) => setPreview({ filename: receipt.originalFilename, imageUrl })} onSave={api.saveReview} onApprove={api.approve} onDelete={() => setPendingDelete(receipt)} />)}
-    </div> : <div className="receipt-empty"><Camera size={30} /><h3>Dodaj pierwszy paragon</h3><label className="button primary receipt-upload-button"><Upload size={17} />Wybierz zdjęcie<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} /></label></div>}
+      {api.receipts.map((receipt) => <ReceiptCard key={receipt.id} receipt={receipt} imageUrl={api.imageUrls[receipt.id]} categories={categories} parserVariant={parserVariant} isSaving={api.isSaving} onPreview={(imageUrl) => setPreview({ filename: receipt.originalFilename, imageUrl })} onAnalyze={api.analyzeWithGemini} onSave={api.saveReview} onApprove={api.approve} onDelete={() => setPendingDelete(receipt)} />)}
+    </div> : <div className="receipt-empty"><Camera size={30} /><h3>Dodaj pierwszy paragon</h3><label className="button primary receipt-upload-button"><Upload size={17} />{usesGemini ? uploadLabel : 'Wybierz zdjęcie'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} /></label></div>}
     {preview && <ReceiptImageModal {...preview} onClose={() => setPreview(null)} />}
     {pendingDelete && <DeleteModal receipt={pendingDelete} isSaving={api.isSaving} onCancel={() => setPendingDelete(null)} onConfirm={async () => { if (await api.remove(pendingDelete)) setPendingDelete(null) }} />}
   </div>
 }
 
-function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSave, onApprove, onDelete }: { receipt: Receipt; imageUrl?: string; categories: Category[]; isSaving: boolean; onPreview: (url: string) => void; onSave: (id: string, review: ReceiptReview) => Promise<boolean>; onApprove: (id: string, categoryId: string | null) => Promise<boolean>; onDelete: () => void }) {
+function ReceiptCard({ receipt, imageUrl, categories, parserVariant, isSaving, onPreview, onAnalyze, onSave, onApprove, onDelete }: { receipt: Receipt; imageUrl?: string; categories: Category[]; parserVariant: ReceiptParserVariant; isSaving: boolean; onPreview: (url: string) => void; onAnalyze: (id: string) => Promise<boolean>; onSave: (id: string, review: ReceiptReview) => Promise<boolean>; onApprove: (id: string, categoryId: string | null) => Promise<boolean>; onDelete: () => void }) {
   const approved = receipt.status === 'approved'
   const reviewable = receipt.status === 'needs_review'
   const failed = receipt.status === 'failed'
+  const canAnalyzeWithGemini = receipt.analysisMethod === 'gemini'
+    && parserVariant === 'gemini'
+    && (receipt.status === 'ready_for_analysis' || (receipt.status === 'queued' && receipt.jobStatus === 'pending'))
   const [expanded, setExpanded] = useState(!approved)
   const [editing, setEditing] = useState(false)
   const [recoveringFailed, setRecoveringFailed] = useState(false)
@@ -85,7 +105,7 @@ function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSav
   const hasTotalDifference = Number.isFinite(totalDifference) && Math.abs(totalDifference) >= 0.01
   const missingCategory = hasUncategorizedReceiptItems(items)
   const displayName = merchant || receipt.originalFilename
-  const statusCopy = receiptStatusCopy[receipt.status]
+  const statusCopy = receiptStatusCopy(receipt.status, receipt.analysisMethod)
   const categorySummary = items.reduce<Array<{ categoryId: string | null; itemCount: number; total: number }>>((groups, item) => {
     const existing = groups.find((group) => group.categoryId === item.categoryId)
     if (existing) { existing.itemCount += 1; existing.total += item.totalPrice; return groups }
@@ -151,7 +171,7 @@ function ReceiptCard({ receipt, imageUrl, categories, isSaving, onPreview, onSav
     <section className="receipt-review-card">
       <header className="receipt-summary-header" onClick={() => setExpanded((value) => !value)}>
         <div className="receipt-summary-copy"><strong>{expanded ? 'Zweryfikuj dane paragonu' : displayName}</strong><span>{expanded ? `${items.length} ${items.length === 1 ? 'produkt' : 'produktów'}` : `${purchasedAt || 'Brak daty'} · ${items.length} ${items.length === 1 ? 'produkt' : 'produktów'}`}</span>{!expanded && <strong className="receipt-summary-total">{Number.isFinite(receiptTotal) ? money.format(receiptTotal) : 'Brak sumy'}</strong>}</div>
-        <div className="receipt-card-actions"><span className={`receipt-status ${receipt.status}`}>{statusCopy.label}</span>{approved && <button className="button secondary receipt-edit-button" onClick={(event) => { event.stopPropagation(); if (editing) { void saveChanges(); return } setExpanded(true); setEditing(true) }} disabled={isSaving}>{editing ? <><Save size={15} />Zapisz</> : <><Pencil size={15} />Edytuj</>}</button>}{failed && !recoveringFailed && <button className="button secondary receipt-edit-button" onClick={(event) => { event.stopPropagation(); setExpanded(true); setRecoveringFailed(true) }} disabled={isSaving}><Pencil size={15} />Popraw ręcznie</button>}<button className="text-button receipt-toggle-button" aria-label={expanded ? 'Zwiń paragon' : 'Rozwiń paragon'} onClick={(event) => { event.stopPropagation(); setExpanded((value) => !value) }}>{expanded ? <>Zwiń <ChevronUp size={16} /></> : <>Szczegóły <ChevronDown size={16} /></>}</button><button className="delete-button" aria-label="Usuń paragon" onClick={(event) => { event.stopPropagation(); onDelete() }} disabled={isSaving}><Trash2 size={17} /></button></div>
+        <div className="receipt-card-actions"><span className={`receipt-status ${receipt.status} ${receipt.analysisMethod}`}>{statusCopy.label}</span>{canAnalyzeWithGemini && <button className="button primary receipt-analyze-button" onClick={(event) => { event.stopPropagation(); void onAnalyze(receipt.id) }} disabled={isSaving}><Sparkles size={15} />Analizuj przez Gemini</button>}{approved && <button className="button secondary receipt-edit-button" onClick={(event) => { event.stopPropagation(); if (editing) { void saveChanges(); return } setExpanded(true); setEditing(true) }} disabled={isSaving}>{editing ? <><Save size={15} />Zapisz</> : <><Pencil size={15} />Edytuj</>}</button>}{failed && !recoveringFailed && <button className="button secondary receipt-edit-button" onClick={(event) => { event.stopPropagation(); setExpanded(true); setRecoveringFailed(true) }} disabled={isSaving}><Pencil size={15} />Popraw ręcznie</button>}<button className="text-button receipt-toggle-button" aria-label={expanded ? 'Zwiń paragon' : 'Rozwiń paragon'} onClick={(event) => { event.stopPropagation(); setExpanded((value) => !value) }}>{expanded ? <>Zwiń <ChevronUp size={16} /></> : <>Szczegóły <ChevronDown size={16} /></>}</button><button className="delete-button" aria-label="Usuń paragon" onClick={(event) => { event.stopPropagation(); onDelete() }} disabled={isSaving}><Trash2 size={17} /></button></div>
       </header>
       {!expanded && <div className="receipt-category-summary">{categorySummary.length ? categorySummary.map((group) => { const category = categories.find((item) => item.id === group.categoryId); return <span key={group.categoryId ?? 'none'} style={category ? { backgroundColor: `${category.color}20`, color: category.color } : undefined}><strong>{category?.name ?? 'Bez kategorii'}</strong><small>{group.itemCount} {group.itemCount === 1 ? 'produkt' : 'produktów'} · {money.format(group.total)}</small></span> }) : <small>Brak rozpoznanych kategorii.</small>}</div>}
       {expanded && !showEditor && <div className={`receipt-progress ${failed ? 'error' : ''}`} role={failed ? 'alert' : 'status'}><span>{failed && receipt.processingError ? `${statusCopy.message} ${receipt.processingError}` : statusCopy.message}</span></div>}
